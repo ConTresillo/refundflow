@@ -7,3 +7,6 @@ venv/
 .env
 .env.*
 !.env.example
+
+# Editable package metadata
+*.egg-info/
