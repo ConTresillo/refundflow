@@ -35,5 +35,8 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 - [ ] Optional Piper adapter (no automatic model download).
 - [ ] Interview walkthrough and reproducible demo.
 
+## Integration and reuse
+Inventory existing repo capabilities, official docs, maintained libraries and templates before implementation. Prefer wiring stable components over custom replacements; document any gap requiring adaptation. Keep frontend, backend, RAG, graph/MCP, evaluation and deployment modules independently testable, then verify their end-to-end integration. Piper TTS is the differentiating optional module.
+
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

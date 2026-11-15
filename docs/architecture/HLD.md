@@ -19,3 +19,6 @@ One local Docker Compose deployment should run UI/API and local persistence with
 
 ## Open decisions
 Storage/index selection, frontend framework, authentication for the local demo, exact evaluation dataset/metrics and workflow agent boundaries must be decided in ADRs with tests and trade-offs before they become hard dependencies.
+
+## Integration approach
+Treat frontend, API, RAG/policy, LangGraph/MCP, evaluation and deployment as cohesive modules with explicit contracts. Reuse established libraries/templates and compose them; parallel implementation is acceptable only after contracts are agreed. Prefer wiring stable components over rewriting them. TTS is the differentiating optional local adapter, kept isolated from core policy decisions.
