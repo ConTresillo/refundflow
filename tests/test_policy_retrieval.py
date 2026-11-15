@@ -34,6 +34,17 @@ def test_registry_rejects_external_or_incomplete_policy_records(tmp_path, monkey
         raise AssertionError("invalid policy record should be rejected")
 
 
+def test_retrieval_can_filter_to_selected_departments():
+    docs = [
+        {"policy_id": "billing", "department_id": "billing", "title": "Billing", "source_name": "Demo", "source_url": "", "chunk": "refund payment evidence"},
+        {"policy_id": "support", "department_id": "support", "title": "Support", "source_name": "Demo", "source_url": "", "chunk": "refund payment evidence"},
+    ]
+
+    results = policies.retrieve("refund payment", docs, departments={"billing"})
+
+    assert [item["policy_id"] for item in results] == ["billing"]
+
+
 def test_retrieval_ignores_punctuation_for_overlap():
     doc = {
         "policy_id": "punctuated",
@@ -74,3 +85,15 @@ def test_chunks_and_runs_deterministic_retrieval_without_llm():
     assert first["policy_id"] in registry
     assert first["source_type"] == "synthetic_demo"
     assert first["score"] > 0
+
+
+def test_retrieval_filters_policy_status_and_effective_dates():
+    docs = [
+        {"policy_id": "current", "department_id": "billing", "status": "active", "effective_from": "2026-01-01", "effective_to": None, "title": "Current", "source_name": "Demo", "source_url": "", "chunk": "refund settlement"},
+        {"policy_id": "future", "department_id": "billing", "status": "active", "effective_from": "2027-01-01", "effective_to": None, "title": "Future", "source_name": "Demo", "source_url": "", "chunk": "refund settlement"},
+        {"policy_id": "withdrawn", "department_id": "billing", "status": "withdrawn", "effective_from": "2020-01-01", "effective_to": None, "title": "Withdrawn", "source_name": "Demo", "source_url": "", "chunk": "refund settlement"},
+    ]
+
+    results = policies.retrieve("refund settlement", docs, as_of="2026-11-16")
+
+    assert [item["policy_id"] for item in results] == ["current"]

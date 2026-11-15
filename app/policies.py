@@ -83,17 +83,36 @@ def split_text(text: str, max_words: int | None = None) -> list[str]:
     ]
 
 
-def retrieve(query: str, documents: list[dict], top_k: int = 3) -> list[dict]:
+def retrieve(
+    query: str,
+    documents: list[dict],
+    top_k: int = 3,
+    *,
+    departments: set[str] | None = None,
+    policy_ids: set[str] | None = None,
+    as_of: str | None = None,
+) -> list[dict]:
     """Pure, deterministic retrieval by token-overlap scoring.
 
-    No LLM, no randomness, no network calls. The result is always the same
-    for the same (query, documents) input.
+    Optional department, policy-ID, and as-of filters constrain evidence before
+    ranking. Dates use ISO-8601 calendar-date strings from validated records.
+    No LLM, randomness, or network calls are involved.
     """
     query_tokens = {
         w.lower().strip(".,;:!?()[]{}\"'") for w in query.split() if w.strip()
     }
     scored: list[tuple[int, dict]] = []
     for doc in documents:
+        if departments is not None and doc.get("department_id") not in departments:
+            continue
+        if policy_ids is not None and doc.get("policy_id") not in policy_ids:
+            continue
+        if as_of is not None and (
+            doc.get("status") != "active"
+            or doc.get("effective_from", "") > as_of
+            or (doc.get("effective_to") is not None and doc["effective_to"] < as_of)
+        ):
+            continue
         chunk_tokens = {
             w.lower().strip(".,;:!?()[]{}\"'") for w in doc["chunk"].split()
         }

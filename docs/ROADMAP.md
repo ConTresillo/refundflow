@@ -6,7 +6,7 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 - [x] Confirm the existing venv, package boundaries, lock strategy, and local/offline baseline.
 - [x] HLD/LLD, domain model, safety/threat model, interfaces, ADR template, test/evaluation plan, decision-log format.
 - [x] Curate synthetic department policies and provenance; remove raw fetched snapshots.
-- [ ] Curated source-data validation and department-scoped selection surface.
+- [x] Curated source-data validation and department-scoped selection surface.
 
 ## Phase 2 — Policy catalog and change simulator
 - [ ] Versioned policy catalog and department selection.
