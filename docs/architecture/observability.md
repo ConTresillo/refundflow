@@ -1,0 +1,3 @@
+# Observability — draft
+
+Propagate one run/trace ID across UI/API, graph, MCP call, retrieval, ingestion, cache, approval, and evaluation events. Record structured timestamps, component, event, policy/version IDs, duration, result, error category, chunk counts, cache status/invalidation reason, and approval state. Never log secrets or unnecessary customer text/PII. Local dashboards/reports should expose ingestion freshness, active policy versions, graph trace, MCP tool activity, cache hit/miss/stale prevention, and evaluation metrics. Retain an append-only audit trail for simulation decisions; define retention/redaction policy before production.
