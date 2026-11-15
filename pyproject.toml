@@ -28,3 +28,4 @@ addopts = "-q"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["app*"]
