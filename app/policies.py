@@ -107,7 +107,9 @@ def retrieve(query: str, documents: list[dict], top_k: int = 3) -> list[dict]:
     No LLM, no randomness, no network calls. The result is always the same
     for the same (query, documents) input.
     """
-    query_tokens = {w.lower() for w in query.split() if w.strip()}
+    query_tokens = {
+        w.lower().strip(".,;:!?()[]{}\"'") for w in query.split() if w.strip()
+    }
     scored: list[tuple[int, dict]] = []
     for doc in documents:
         chunk_tokens = {

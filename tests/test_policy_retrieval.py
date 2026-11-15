@@ -13,6 +13,21 @@ def test_loads_the_two_real_public_policies():
     assert tos["source_url"] == "https://docs.github.com/en/github/site-policy/github-terms-of-service"
 
 
+def test_retrieval_ignores_punctuation_for_overlap():
+    doc = {
+        "policy_id": "punctuated",
+        "title": "Policy",
+        "source_name": "Example",
+        "source_url": "https://example.com/policy",
+        "chunk": "Refunds are allowed.",
+    }
+
+    results = policies.retrieve("refunds!!!", [doc])
+
+    assert results[0]["policy_id"] == "punctuated"
+    assert results[0]["score"] == 1
+
+
 def test_chunks_and_runs_deterministic_retrieval_without_llm():
     registry = policies.load_registry()
     docs = policies.make_documents(registry)
