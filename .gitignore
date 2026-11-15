@@ -10,3 +10,6 @@ venv/
 
 # Editable package metadata
 *.egg-info/
+
+# Local environment/dependency artifacts
+requirements-dev.lock.tmp
