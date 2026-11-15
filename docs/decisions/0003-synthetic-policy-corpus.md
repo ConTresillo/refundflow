@@ -9,7 +9,7 @@
 - Dependencies: none added or changed; existing `requirements-dev.lock`/venv used.
 - Tests/evaluation: strict TDD for registry behavior: added two tests and observed both fail against the old registry (missing department field; incomplete records accepted). `.venv/Scripts/python.exe -m pytest -q` — 4 passed, 13 existing LangSmith `asyncio.iscoroutinefunction` deprecation warnings. Manual corpus check: 4 policies, all 4 departments represented, 16 excerpts/chunks, all loaded policy hashes are 64 hex chars. `git diff --check` clean. No retrieval quality evaluation is claimed.
 - Security/artifact review: raw third-party HTML and extracted snapshots removed from tracked tree; no added external material, credentials, or dependencies. JSON records were authored for simulation and explicitly disclaim legal advice. No remote service accessed.
-- Commit SHA(s): pending.
-- Remote HEAD: pending push/read-back.
+- Commit SHA(s): `63722f7e8879406b9e490ab576986bcfd8491c1d` (`Curate synthetic department policy corpus`).
+- Remote HEAD: push succeeded; fresh `git ls-remote origin refs/heads/main` returned `63722f7e8879406b9e490ab576986bcfd8491c1d`, equal to local `HEAD`; working tree clean.
 - Blocker: no blocker for corpus milestone. Broader remaining work includes department/policy selection, version/change simulator, and real incremental retrieval/storage.
 - Next step: extend retrieval/evaluation to filter by department, policy status and effective date; then implement controlled policy version/change simulation.
