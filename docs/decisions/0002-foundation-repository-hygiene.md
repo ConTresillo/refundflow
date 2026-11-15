@@ -9,7 +9,7 @@
 - Dependencies: none added or changed.
 - Tests/evaluation: `.venv/Scripts/python.exe -m pytest -q` — passed, 3 tests; 13 existing LangSmith deprecation warnings (`asyncio.iscoroutinefunction`, Python 3.16 removal notice). No application behavior changed.
 - Security/artifact review: identified raw fetched HTML/text as tracked artifacts, not curated synthetic policy records; future additions now ignored. No secret scan findings assessed beyond review of this documentation/config-only diff.
-- Commit SHA(s): pending.
-- Remote HEAD: before this run's change, `origin/main` matched `da374f23fa520a838f7fa09cde82c27fad898187`; post-push verification pending.
+- Commit SHA(s): `64a28d7634168343574c3664710c4463bf1a37d7` (`chore: exclude raw policy snapshots from new tracking`).
+- Remote HEAD: push succeeded; fresh `git ls-remote origin refs/heads/main` returned `64a28d7634168343574c3664710c4463bf1a37d7`, equal to local `HEAD`.
 - Blocker: tracked snapshots still require owner-authorized policy-source disposition/removal before the curated corpus can be considered safe/clean. No external dependencies need approval for this slice.
 - Next step: curate department-tagged synthetic policy records with provenance/version metadata and remove the tracked raw snapshots as part of that corpus migration.
