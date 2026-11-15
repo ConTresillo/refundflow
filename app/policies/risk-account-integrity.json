@@ -1,0 +1,20 @@
+{
+  "id": "risk-account-integrity",
+  "department_id": "risk",
+  "version": "1.0",
+  "title": "Risk Review and Account Integrity",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Risk review checks for inconsistent order, payment, and account signals before a consequential refund recommendation is presented for approval.",
+    "A mismatch between account ownership and the order evidence requires human review. Do not expose another customer's account or transaction details.",
+    "Repeated or conflicting refund claims may be routed for a second review. A risk flag is a request for investigation, not proof of fraud or grounds for an automatic denial.",
+    "Record only the minimum case evidence needed for review. Remove unnecessary personal information from notes and never collect passwords or full payment credentials."
+  ]
+}

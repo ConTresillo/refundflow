@@ -1,0 +1,20 @@
+{
+  "id": "billing-refunds",
+  "department_id": "billing",
+  "version": "1.0",
+  "title": "Billing Refund Eligibility and Settlement",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Billing reviews refund eligibility against the original order total and payment status. A simulation may recommend a full or partial refund but never sends money.",
+    "If a duplicate charge is reported, compare transaction references and timestamps before classifying the second charge. Escalate conflicting records for billing review.",
+    "When a refund is approved, record its amount, currency, original payment reference, and estimated settlement window. Never redirect a refund to a different payment method.",
+    "A refund request outside the published window requires a documented exception review. Missing transaction evidence is a reason to request evidence, not to assume a charge occurred."
+  ]
+}

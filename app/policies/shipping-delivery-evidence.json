@@ -1,0 +1,20 @@
+{
+  "id": "shipping-delivery-evidence",
+  "department_id": "shipping",
+  "version": "1.0",
+  "title": "Shipping Delivery and Return Evidence",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Shipping review compares the carrier delivery scan with the customer's reported delivery date and the address held for the order.",
+    "A parcel marked delivered but reported missing requires a delivery-evidence review. A carrier scan alone does not establish that the customer received the parcel.",
+    "For a returned parcel, retain the return tracking reference and check that the item reached the designated return facility before recommending refund settlement.",
+    "If a shipment is delayed in transit, record the latest carrier event and expected update. Do not mark a parcel lost solely because tracking has not refreshed."
+  ]
+}

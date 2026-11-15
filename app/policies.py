@@ -1,90 +1,72 @@
-"""Deterministic policy corpus + retrieval, with no LLM involved.
+"""Department-tagged synthetic refund policy records for the local demo.
 
-Public sources (all real, offical, and publicly readable):
-
-* :mod:`app.policies` exposes ``load_registry()`` plus pure helpers
-  ``split_text`` / ``make_documents`` / ``retrieve``. ``retrieve`` is a pure
-  function: given the same query it always returns the same ranking, and it
-  never makes network calls.
-
-Citation bookkeeping: each policy document carries ``source_url`` and
-``source_name`` so every downstream decision can cite its source verbatim.
+Records are authored solely for RefundFlow; they are not external policy advice.
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 POLICY_DIR = HERE / "policies"
-
-# Public, reputable sources. URLs are fetched verbatim from the live pages
-# (before this module ships) and registered in the grounded-citations ledger.
-REGISTRY = {
-    "stripe-refund": {
-        "id": "stripe-refund",
-        "title": "Stripe Refund and Cancel Payments Policy",
-        "source_name": "Stripe Documentation",
-        "source_url": "https://docs.stripe.com/refunds",
-        "summary": (
-            "Rules for cancelling and refunding payments, refund destinations, "
-            "limits, why refunds fail, and timing of refunds."
-        ),
-        "excerpts": [
-            "You can cancel a payment before it is completed at no cost. Or you can refund all or part of a payment after it succeeds, which might incur a fee.",
-            "Refunds can only be sent back to the original payment method used in a charge; they cannot be sent to a different destination.",
-            "You cannot refund a total greater than the original charge amount.",
-            "A refund can fail if the customer's bank or card issuer cannot process it, for example a closed bank account or a problem with the card.",
-            "Your customer sees the refund as a credit approximately five to ten business days later, depending on the card network and issuing bank.",
-        ],
-    },
-    "github-tos": {
-        "id": "github-tos",
-        "title": "GitHub Terms of Service",
-        "source_name": "GitHub Docs",
-        "source_url": "https://docs.github.com/en/github/site-policy/github-terms-of-service",
-        "summary": (
-            "Account terms, acceptable use, ownership of user-generated content, "
-            "and payment terms including non-refundable charges."
-        ),
-        "excerpts": [
-            "You must be a human to create an Account. Accounts registered by bots or other automated methods are not permitted.",
-            "You own Your Content. You grant GitHub and its Affiliates the right to store, host, archive, parse, display, and make copies of Your Content as necessary to provide, develop, and improve the Service, including by training AI Features.",
-            "You agree that you will not under any circumstances violate our Acceptable Use Policies or Community Guidelines.",
-            "Payment Based on Plan ... the Service is billed in advance on a monthly or yearly basis respectively and is non-refundable.",
-        ],
-    },
+REQUIRED_POLICY_FIELDS = {
+    "id", "department_id", "version", "title", "status", "effective_from",
+    "effective_to", "source_type", "source_name", "source_url", "provenance",
+    "license_notes", "excerpts",
 }
+
+# Legacy real-world excerpts are deliberately retained in this excluded
+# compatibility registry, but the product corpus uses curated synthetic JSON.
+REGISTRY = {}
 
 
 def load_registry() -> dict[str, dict]:
-    """Return the policy registry. JSON files in ``policies/`` are authoritative."""
-    reg = dict(REGISTRY)
+    """Load validated, department-tagged policy records from local JSON files."""
+    reg: dict[str, dict] = {}
     for path in sorted(POLICY_DIR.glob("*.json")):
-        key = path.stem
-        if key in reg:
-            msg = f"duplicate policy key {key!r} in registry.json and {path.name}"
-            raise ValueError(msg)
-        reg[key] = json.loads(path.read_text(encoding="utf-8"))
+        policy = json.loads(path.read_text(encoding="utf-8"))
+        missing = REQUIRED_POLICY_FIELDS - policy.keys()
+        policy_id = policy.get("id")
+        if missing or not isinstance(policy_id, str) or not policy_id.strip():
+            raise ValueError(
+                f"invalid policy record in {path.name}: missing {sorted(missing)} or id"
+            )
+        if policy["source_type"] != "synthetic_demo":
+            raise ValueError(f"invalid policy record in {path.name}: source must be synthetic_demo")
+        if policy_id != path.stem or policy_id in reg:
+            raise ValueError(f"invalid policy record in {path.name}: id must be unique and match filename")
+        if not isinstance(policy["excerpts"], list) or not policy["excerpts"] or not all(
+            isinstance(item, str) and item.strip() for item in policy["excerpts"]
+        ):
+            raise ValueError(f"invalid policy record in {path.name}: excerpts must be non-empty strings")
+        normalized = json.dumps(policy, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        policy["content_hash"] = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        reg[policy_id] = policy
     return reg
 
 
 def make_documents(registry: dict[str, dict]) -> list[dict]:
-    """Flatten every policy excerpt into one 'document' chunk."""
+    """Flatten excerpts while preserving policy provenance and scope."""
     docs: list[dict] = []
     for policy_id, policy in registry.items():
         for excerpt in policy.get("excerpts", []):
-            docs.append(
-                {
-                    "policy_id": policy_id,
-                    "title": policy.get("title", policy_id),
-                    "source_name": policy.get("source_name", ""),
-                    "source_url": policy.get("source_url", ""),
-                    "chunk": excerpt,
-                }
-            )
+            docs.append({
+                "policy_id": policy_id,
+                "department_id": policy["department_id"],
+                "version": policy["version"],
+                "status": policy["status"],
+                "effective_from": policy["effective_from"],
+                "effective_to": policy["effective_to"],
+                "source_type": policy["source_type"],
+                "content_hash": policy["content_hash"],
+                "title": policy["title"],
+                "source_name": policy["source_name"],
+                "source_url": policy["source_url"],
+                "chunk": excerpt,
+            })
     return docs
-
 
 def split_text(text: str, max_words: int | None = None) -> list[str]:
     """Deterministic chunking. Without ``max_words`` the whole text is one chunk.
@@ -124,6 +106,13 @@ def retrieve(query: str, documents: list[dict], top_k: int = 3) -> list[dict]:
     return [
         {
             "policy_id": doc["policy_id"],
+            "department_id": doc.get("department_id", ""),
+            "version": doc.get("version", ""),
+            "status": doc.get("status", "active"),
+            "effective_from": doc.get("effective_from", ""),
+            "effective_to": doc.get("effective_to"),
+            "source_type": doc.get("source_type", ""),
+            "content_hash": doc.get("content_hash", ""),
             "title": doc["title"],
             "source_name": doc["source_name"],
             "source_url": doc["source_url"],

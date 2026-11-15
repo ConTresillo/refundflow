@@ -1,0 +1,15 @@
+# Run record 0003 — synthetic department policy corpus
+
+- Date/run: 2026-11-16; scheduled run (unique scheduler run ID unavailable).
+- Goal: replace raw external source snapshots in the active policy corpus with curated, provenance-complete synthetic policy records.
+- Context: baseline `main`/`origin/main` was `234f5aab4b61e18a38baf58b729cfa67f1e76bbe`; working tree was clean. Existing retrieval consumed a two-policy hardcoded registry and tests asserted a real-world source ranked first. Six tracked raw snapshots (three HTML, three extracted text; about 1.73 MB) were not a validated synthetic corpus. The project venv already provides Python 3.14, pytest and core LangGraph/MCP packages; no dependency changes were needed.
+- Alternatives: retain third-party excerpts beside synthetic data; or make the demo corpus synthetic-only and remove snapshots. Chose a separate local synthetic corpus because production/demo policy semantics must be clearly distinct from real external policy references.
+- Decision/consequences: add four authored JSON records (Support, Billing, Shipping, Risk), each with stable ID, version, owner, effective dates, active status, explicit synthetic provenance/license note, source metadata and deterministic SHA-256 content hash at load time. Validate required metadata, synthetic source type, file/ID identity, and nonempty excerpts. Preserve provenance/scope fields through current excerpt-document and retrieval output. Remove the six raw snapshots from Git and rely on the existing ignore rules. Retrieval/chunking remains the existing lightweight lexical baseline; persistent incremental ingestion and stable chunk IDs are not claimed by this slice.
+- Files touched: `app/policies.py`; `app/policies/*.json` (four synthetic records); `tests/test_policy_retrieval.py`; `docs/ROADMAP.md`; deleted the six tracked snapshot files.
+- Dependencies: none added or changed; existing `requirements-dev.lock`/venv used.
+- Tests/evaluation: strict TDD for registry behavior: added two tests and observed both fail against the old registry (missing department field; incomplete records accepted). `.venv/Scripts/python.exe -m pytest -q` — 4 passed, 13 existing LangSmith `asyncio.iscoroutinefunction` deprecation warnings. Manual corpus check: 4 policies, all 4 departments represented, 16 excerpts/chunks, all loaded policy hashes are 64 hex chars. `git diff --check` clean. No retrieval quality evaluation is claimed.
+- Security/artifact review: raw third-party HTML and extracted snapshots removed from tracked tree; no added external material, credentials, or dependencies. JSON records were authored for simulation and explicitly disclaim legal advice. No remote service accessed.
+- Commit SHA(s): pending.
+- Remote HEAD: pending push/read-back.
+- Blocker: no blocker for corpus milestone. Broader remaining work includes department/policy selection, version/change simulator, and real incremental retrieval/storage.
+- Next step: extend retrieval/evaluation to filter by department, policy status and effective date; then implement controlled policy version/change simulation.

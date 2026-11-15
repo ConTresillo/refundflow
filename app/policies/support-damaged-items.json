@@ -1,0 +1,20 @@
+{
+  "id": "support-damaged-items",
+  "department_id": "support",
+  "version": "1.0",
+  "title": "Support Intake for Damaged or Missing Items",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "For a damaged delivery, support records the order reference, delivery date, and a concise description of the damage before recommending a remedy.",
+    "Ask for a photograph or other reasonable evidence when needed to assess a damage claim. Do not request payment credentials or unnecessary personal information.",
+    "Support may recommend a replacement, return, or refund for review. Communicate the proposed next step clearly and do not promise a consequential action before approval.",
+    "If the account holder disputes the order identity or the available evidence conflicts, pause the recommendation and route the case to the responsible review team."
+  ]
+}

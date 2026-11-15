@@ -3,14 +3,35 @@ from app import policies
 QUERY_NEED_REFUND = "I paid for an order but the item arrived damaged. How do I get a refund?"
 
 
-def test_loads_the_two_real_public_policies():
+def test_loads_only_versioned_synthetic_demo_policies_by_department():
     reg = policies.load_registry()
-    assert set(reg) == {"stripe-refund", "github-tos"}
-    stripe = reg["stripe-refund"]
-    assert stripe["source_url"] == "https://docs.stripe.com/refunds"
-    assert stripe["source_name"] == "Stripe Documentation"
-    tos = reg["github-tos"]
-    assert tos["source_url"] == "https://docs.github.com/en/github/site-policy/github-terms-of-service"
+    assert reg
+    assert {policy["department_id"] for policy in reg.values()} >= {
+        "support", "billing", "shipping", "risk"
+    }
+    for policy_id, policy in reg.items():
+        assert policy["id"] == policy_id
+        assert policy["status"] == "active"
+        assert policy["version"] == "1.0"
+        assert policy["effective_from"]
+        assert policy["effective_to"] is None
+        assert policy["source_type"] == "synthetic_demo"
+        assert policy["source_name"] == "RefundFlow synthetic policy collection"
+        assert policy["license_notes"] == "Synthetic demo text; not legal advice."
+        assert policy["excerpts"]
+
+
+def test_registry_rejects_external_or_incomplete_policy_records(tmp_path, monkeypatch):
+    monkeypatch.setattr(policies, "POLICY_DIR", tmp_path)
+    (tmp_path / "invalid.json").write_text(
+        '{"id":"invalid","title":"Not provenance-complete"}', encoding="utf-8"
+    )
+    try:
+        policies.load_registry()
+    except ValueError as error:
+        assert "invalid policy record" in str(error)
+    else:
+        raise AssertionError("invalid policy record should be rejected")
 
 
 def test_retrieval_ignores_punctuation_for_overlap():
@@ -50,6 +71,6 @@ def test_chunks_and_runs_deterministic_retrieval_without_llm():
     assert len(ranking) == 2
     assert isinstance(ranking, list)
     first = ranking[0]
-    assert first["policy_id"] == "stripe-refund"
-    assert first["source_url"] == "https://docs.stripe.com/refunds"
+    assert first["policy_id"] in registry
+    assert first["source_type"] == "synthetic_demo"
     assert first["score"] > 0

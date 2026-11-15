@@ -5,7 +5,8 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 ## Phase 1 — Foundation and design
 - [x] Confirm the existing venv, package boundaries, lock strategy, and local/offline baseline.
 - [x] HLD/LLD, domain model, safety/threat model, interfaces, ADR template, test/evaluation plan, decision-log format.
-- [ ] Curate synthetic department policies and provenance; remove unsafe raw web snapshots from the source-of-truth corpus. Raw fetched HTML/text snapshots identified in the initial repository are now excluded from future tracking; already tracked files still need removal in the policy-corpus slice.
+- [x] Curate synthetic department policies and provenance; remove raw fetched snapshots.
+- [ ] Curated source-data validation and department-scoped selection surface.
 
 ## Phase 2 — Policy catalog and change simulator
 - [ ] Versioned policy catalog and department selection.
