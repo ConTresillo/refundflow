@@ -40,3 +40,6 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.
+
+## Engineering practice
+Use autonomous, evidence-driven iteration rather than rigid ceremony: each slice starts with a clear outcome and ends with verified behavior, a versioned decision/run record, and a next step. Select test strategy per risk (top-down, bottom-up, sandwich/contract, unit/integration/e2e/evaluation). Final app behavior must be data-driven/configurable, not hard-coded to demo fixtures. Stubs are explicit test/provider-boundary replacements only; record fidelity limits and remaining real integration checks.
