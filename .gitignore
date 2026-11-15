@@ -13,3 +13,10 @@ venv/
 
 # Local environment/dependency artifacts
 requirements-dev.lock.tmp
+
+# Live-source snapshots are not policy corpus; keep raw HTML and extracted
+# source text out of version control. Curated records belong under app/policies.
+policy_sources/
+github-privacy.txt
+github-tos.txt
+stripe-refunds.txt
