@@ -9,8 +9,10 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 - [x] Curated source-data validation and department-scoped selection surface.
 
 ## Phase 2 — Policy catalog and change simulator
-- [ ] Versioned policy catalog and department selection.
+- [x] Versioned policy catalog and department selection.
 - [ ] Deterministic publish/amend/withdraw/expire simulation with an event timeline.
+
+The current catalog persists immutable version snapshots and publication events in SQLite. Amend/withdraw/expiry transitions and scheduled deterministic effects remain outstanding.
 
 ## Phase 3 — Real incremental RAG
 - [ ] Stable chunk IDs, real local retrieval, citations, freshness/version filters.
