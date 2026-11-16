@@ -102,6 +102,50 @@ class PolicyCatalog:
                 ("withdrawn", policy_id, row["version"], row["department_id"], occurred_at, reason),
             )
 
+    def activate_due_changes(self, *, as_of: str) -> int:
+        """Expire active versions whose inclusive effective period has ended.
+
+        The caller supplies a deterministic ISO calendar date; no wall-clock
+        access is hidden in catalog state transitions. Returns changed count.
+        """
+        if not isinstance(as_of, str) or not as_of.strip():
+            raise ValueError("as_of must be a non-empty ISO date")
+        try:
+            from datetime import date
+            evaluated = date.fromisoformat(as_of)
+        except ValueError as error:
+            raise ValueError("as_of must be an ISO calendar date") from error
+
+        changed = 0
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT policy_id, version, department_id, record_json FROM policy_versions "
+                "WHERE rowid IN (SELECT MAX(rowid) FROM policy_versions GROUP BY policy_id)"
+            ).fetchall()
+            for row in rows:
+                record = json.loads(row["record_json"])
+                effective_to = record.get("effective_to")
+                if record["status"] != "active" or effective_to is None:
+                    continue
+                try:
+                    expiry = date.fromisoformat(effective_to)
+                except (TypeError, ValueError) as error:
+                    raise ValueError(f"invalid effective_to for {row['policy_id']}: {effective_to}") from error
+                if expiry >= evaluated:
+                    continue
+                record["status"] = "expired"
+                connection.execute(
+                    "UPDATE policy_versions SET record_json = ? WHERE policy_id = ? AND version = ?",
+                    (json.dumps(record, sort_keys=True, separators=(",", ":")), row["policy_id"], row["version"]),
+                )
+                connection.execute(
+                    "INSERT INTO policy_events (event_type, policy_id, version, department_id, occurred_at, reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    ("expired", row["policy_id"], row["version"], row["department_id"], as_of, "effective period ended"),
+                )
+                changed += 1
+        return changed
+
     def timeline(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
