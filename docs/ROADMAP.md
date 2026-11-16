@@ -55,7 +55,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-- [ ] Add a rollback/rebuild strategy for source-ingestion generations and provenance-level operator status; preserve the Chroma security gate.
+- [ ] Implement the Decision 0016 foundation: append-only SQLite ingestion runs, immutable complete manifests/items, active-generation pointer, and provenance/status read model. Verify failed sync leaves the pointer/snapshot unchanged; then implement compensating rollback and rebuild from hash-verified snapshots in a bounded follow-up. Chroma remains gated.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.
