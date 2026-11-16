@@ -19,6 +19,8 @@ Verified: publication, withdrawal and explicit deterministic expiry transitions 
 - [ ] Content-hash diff ingestion; changed-file-only processing; idempotence, removal, rollback.
 - [ ] Labeled retrieval/freshness evaluation baseline.
 
+Ranking note: FTS5's built-in `rank` is relevance-ordered with a stable chunk-ID tie-break, verified by a multi-term test. This is lexical retrieval, not vector search.
+
 ## Phase 4 — Caching and observability
 - [ ] Separate prompt-cache concept from real semantic cache.
 - [ ] Scoped keys, policy/version/config invalidation, stale-evidence guard.
@@ -48,7 +50,8 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-Define and test the policy-retrieval adapter contract before wiring `SQLitePolicyIndex`: indexed evidence must carry policy provenance, status, effective dates, source section and citations, and retrieval must enforce department/policy/version scope plus deterministic `as_of` eligibility. Then add labeled lexical retrieval/freshness evaluation. Phase 8 CI now includes linting; the manual source-artifact workflow remains to be dispatched and verified. External deployment remains blocked pending an approved target.
+- [ ] Dispatch and verify the manual main-only source-artifact workflow; then define and test the indexed policy-evidence adapter carrying provenance/status/effective dates/source section/citations with deterministic `as_of` scope before wiring it into retrieval. Add labeled lexical retrieval and freshness evaluation afterward. External deployment needs owner-approved target.
+
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

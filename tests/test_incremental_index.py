@@ -94,6 +94,23 @@ def test_ingest_failure_rolls_back_previous_index(tmp_path):
     assert index.search("new", department_id="billing") == []
 
 
+def test_search_ranks_document_with_more_matching_terms_first(tmp_path):
+    index = SQLitePolicyIndex(tmp_path / "index.db")
+    index.ingest(
+        [
+            make_chunk("refund"),
+            make_chunk("refund settlement timing", section_id="b"),
+        ]
+    )
+
+    results = index.search("refund settlement", department_id="billing")
+
+    assert [item.text for item in results] == [
+        "refund settlement timing",
+        "refund",
+    ]
+
+
 def test_search_matches_any_query_term(tmp_path):
     index = SQLitePolicyIndex(tmp_path / "index.db")
     index.ingest([make_chunk("old refund clause")])
