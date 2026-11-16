@@ -12,10 +12,7 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 - [x] Versioned policy catalog and department selection.
 - [ ] Deterministic publish/amend/withdraw/expire simulation with an event timeline.
 
-The catalog now supports explicit, repeatable expiry transitions by caller-supplied as-of date, while preserving the prior publication record and emitting one auditable event per expired current policy. Scheduled future publication/amendment and automatic invocation from the retrieval path remain outstanding.
-
-The current catalog persists immutable version snapshots and publication events in SQLite. Withdrawal is represented as an append-only event and the current snapshot is marked withdrawn. Expiry is caller-triggered with a deterministic as-of date; scheduled changes, amendment/version publishing, and ingestion/retrieval synchronization remain outstanding.
-
+Verified: publication, withdrawal and explicit deterministic expiry transitions emit timeline events. Scheduled publish/amend activation, effective-date precedence/conflict explanation, rollback and index synchronization remain outstanding.
 ## Phase 3 — Real incremental RAG
 - [ ] Stable chunk IDs, real local retrieval, citations, freshness/version filters.
 - [ ] Content-hash diff ingestion; changed-file-only processing; idempotence, removal, rollback.
@@ -42,6 +39,10 @@ The current catalog persists immutable version snapshots and publication events 
 
 ## Integration and reuse
 Inventory existing repo capabilities, official docs, maintained libraries and templates before implementation. Prefer wiring stable components over custom replacements; document any gap requiring adaptation. Keep frontend, backend, RAG, graph/MCP, evaluation and deployment modules independently testable, then verify their end-to-end integration. Piper TTS is the differentiating optional module.
+
+## Next slice
+
+Implement hash-based incremental indexing and stable chunk identity with real SQLite-backed lexical retrieval. Start with unchanged/changed/deleted/failure tests; keep lifecycle activation and index generation synchronization explicit and freshness-safe.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

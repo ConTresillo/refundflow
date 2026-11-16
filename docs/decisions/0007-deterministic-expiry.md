@@ -14,3 +14,14 @@
 - Remote HEAD: pending verification after push.
 - Blocker: none for this milestone.
 - Next: scheduled publish/amendment activation and ingestion/retrieval freshness synchronization, starting with data contract and tests.
+## Run record 0008 — detailed LLD design
+
+- Date/run: 2026-11-16; scheduled run (scheduler ID unavailable).
+- Goal: audit current design and expand LLD with implementable contracts/diagrams.
+- Baseline: `8f9eb8b0e183ecc685426ef552f18899a0eda6d0`; HLD retained. Catalog and lexical retrieval exist; graph/MCP/index/API/UI do not.
+- Decision: expand LLD before code; it lacked schema/concurrency, lifecycle precedence, HITL and failure/security contracts. Retain SQLite, proportional ports, local MCP only; approval is simulation annotation.
+- Sources: official SQLite transaction/FK, LangGraph persistence/interrupts, MCP architecture, Docling loader; links in LLD. Citation-ledger helper unavailable.
+- Files: LLD, roadmap, this record. No dependency/runtime changes.
+- Verification: `.venv/Scripts/python.exe -m pytest -q` → 11 passed; 13 existing LangSmith deprecation warnings. `git diff --check` passed. Six Mermaid diagram fences and expected types checked; grammar validation unavailable (no renderer installed).
+- Security/artifacts: documentation-only; no secrets or runtime changes.
+- Commit/remote HEAD pending. Next: tests-first SQLite incremental index, stable IDs and unchanged/changed/deleted/failure cases.
