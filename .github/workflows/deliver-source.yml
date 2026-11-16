@@ -1,0 +1,53 @@
+name: Deliver RefundFlow source artifact
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  require-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require main branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Dispatch this delivery workflow from main; no artifact was created." >&2
+            exit 1
+          fi
+
+  verify:
+    needs: require-main
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  source-artifact:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create commit-addressed source bundle
+        shell: bash
+        run: |
+          archive="refundflow-${GITHUB_SHA}.tar.gz"
+          git archive --format=tar.gz --output="$archive" HEAD
+          sha256sum "$archive" > "$archive.sha256"
+          printf 'commit=%s\n' "$GITHUB_SHA" > source-commit.txt
+
+      - name: Upload delivery artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: refundflow-source-${{ github.sha }}
+          path: |
+            refundflow-${{ github.sha }}.tar.gz
+            refundflow-${{ github.sha }}.tar.gz.sha256
+            source-commit.txt
+          if-no-files-found: error
+          retention-days: 14

@@ -14,6 +14,7 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 
 Verified: publication, withdrawal and explicit deterministic expiry transitions emit timeline events. Scheduled publish/amend activation, effective-date precedence/conflict explanation, rollback and index synchronization remain outstanding.
 ## Phase 3 — Real incremental RAG
+- [x] Standalone SQLite FTS5 index module with stable chunk IDs, idempotent snapshots, changed/deleted-chunk retirement, rollback, and department/policy/version-scoped search (unit-tested; not yet connected to the application retrieval path).
 - [ ] Stable chunk IDs, real local retrieval, citations, freshness/version filters.
 - [ ] Content-hash diff ingestion; changed-file-only processing; idempotence, removal, rollback.
 - [ ] Labeled retrieval/freshness evaluation baseline.
@@ -37,12 +38,17 @@ Verified: publication, withdrawal and explicit deterministic expiry transitions 
 - [ ] Optional Piper adapter (no automatic model download).
 - [ ] Interview walkthrough and reproducible demo.
 
+## Phase 8 — CI/CD
+- [ ] GitHub Actions CI on pull requests and `main`, with pinned actions, least privilege, and supported Python/platform checks.
+- [ ] Manual main-only source-artifact delivery gated by the same CI checks.
+- [ ] Select an approved deployment target and configure protected environment, health checks, and rollback before any external deployment.
+
 ## Integration and reuse
 Inventory existing repo capabilities, official docs, maintained libraries and templates before implementation. Prefer wiring stable components over custom replacements; document any gap requiring adaptation. Keep frontend, backend, RAG, graph/MCP, evaluation and deployment modules independently testable, then verify their end-to-end integration. Piper TTS is the differentiating optional module.
 
 ## Next slice
 
-Implement hash-based incremental indexing and stable chunk identity with real SQLite-backed lexical retrieval. Start with unchanged/changed/deleted/failure tests; keep lifecycle activation and index generation synchronization explicit and freshness-safe.
+Wire the verified SQLite FTS5 index into the policy-source retrieval path, preserving policy/version/effective-date filters and adding citation/freshness evaluation. Then complete Phase 8 CI/CD workflow verification and source-artifact delivery; external deployment remains blocked pending an approved target.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.
