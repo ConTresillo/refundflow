@@ -22,10 +22,13 @@ REQUIRED_POLICY_FIELDS = {
 REGISTRY = {}
 
 
-def load_registry() -> dict[str, dict]:
+def load_registry(directory: str | Path | None = None) -> dict[str, dict]:
     """Load validated, department-tagged policy records from local JSON files."""
+    policy_dir = Path(directory) if directory is not None else POLICY_DIR
+    if not policy_dir.is_dir():
+        raise FileNotFoundError(f"policy source directory does not exist: {policy_dir}")
     reg: dict[str, dict] = {}
-    for path in sorted(POLICY_DIR.glob("*.json")):
+    for path in sorted(policy_dir.glob("*.json")):
         policy = json.loads(path.read_text(encoding="utf-8"))
         missing = REQUIRED_POLICY_FIELDS - policy.keys()
         policy_id = policy.get("id")

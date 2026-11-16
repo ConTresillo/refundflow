@@ -55,7 +55,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-- [ ] Implement changed-source-only ingestion synchronized to policy catalog and SQLite index, including deletion, idempotence, rollback/recovery and provenance; retain Chroma security gate.
+- [ ] Add a rollback/rebuild strategy for source-ingestion generations and provenance-level operator status; preserve the Chroma security gate.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

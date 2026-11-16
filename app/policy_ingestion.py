@@ -1,0 +1,178 @@
+"""Change-detected policy source ingestion with atomic SQLite synchronization."""
+
+from __future__ import annotations
+
+import hashlib
+import sqlite3
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
+from app.incremental_index import ChunkInput, IngestResult, SQLitePolicyIndex
+from app.policies import load_registry
+from app.policy_catalog import PolicyCatalog
+
+
+@dataclass(frozen=True)
+class PolicySyncResult:
+    """Policy-level change counts and the matching lexical-index work result."""
+
+    added: int
+    changed: int
+    removed: int
+    unchanged: int
+    index: IngestResult
+
+
+class PolicyIngestionService:
+    """Reconcile curated JSON snapshots with one authoritative SQLite database.
+
+    Policy versions are immutable: content changes require a new version value.
+    Catalog lifecycle writes and index reconciliation share one SQLite
+    transaction, so readers see either the old complete snapshot or the new one.
+    """
+
+    def __init__(
+        self,
+        source_dir: str | Path,
+        catalog: PolicyCatalog,
+        index: SQLitePolicyIndex,
+    ) -> None:
+        self._source_dir = Path(source_dir)
+        catalog_path = Path(catalog.database).resolve()
+        index_path = Path(index.path).resolve()
+        if catalog_path != index_path:
+            raise ValueError("policy ingestion requires catalog and index to share one SQLite database")
+        self._catalog = catalog
+        self._index = index
+
+    @staticmethod
+    def _chunks(record: dict[str, Any]) -> list[ChunkInput]:
+        chunks: list[ChunkInput] = []
+        for excerpt in record["excerpts"]:
+            body = " ".join(excerpt.split())
+            digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+            chunks.append(
+                {
+                    "policy_id": record["id"],
+                    "version": record["version"],
+                    "department_id": record["department_id"],
+                    "section_id": f"excerpt-{digest}",
+                    "text": body,
+                }
+            )
+        return chunks
+
+    def sync(
+        self,
+        *,
+        occurred_at: str,
+        before_commit: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> PolicySyncResult:
+        """Apply added, versioned, unchanged, and removed source files atomically."""
+        if not isinstance(occurred_at, str) or not occurred_at.strip():
+            raise ValueError("occurred_at must be an ISO date or timestamp")
+        try:
+            sync_date = datetime.fromisoformat(occurred_at.replace("Z", "+00:00")).date()
+        except ValueError as error:
+            raise ValueError("occurred_at must be an ISO date or timestamp") from error
+
+        sources = load_registry(self._source_dir)
+        for record in sources.values():
+            if record.get("status") != "active":
+                raise ValueError("source files must describe active policy versions")
+            try:
+                effective_from = date.fromisoformat(record["effective_from"])
+                effective_to = (
+                    date.fromisoformat(record["effective_to"])
+                    if record.get("effective_to") is not None
+                    else None
+                )
+            except (KeyError, TypeError, ValueError) as error:
+                raise ValueError(f"invalid effective dates for policy {record.get('id')}") from error
+            if effective_to is not None and effective_to < effective_from:
+                raise ValueError(f"effective_to precedes effective_from for policy {record['id']}")
+            if effective_from > sync_date:
+                raise ValueError(
+                    f"future effective policy version cannot be activated by source sync: {record['id']}"
+                )
+
+        added = changed = removed = unchanged = 0
+        chunks: list[ChunkInput] = []
+        complete_versions: set[tuple[str, str]] = set()
+        with self._catalog.transaction() as connection:
+            current = self._catalog.current_records(connection=connection)
+
+            for policy_id, record in sources.items():
+                previous = current.get(policy_id)
+                if previous is None:
+                    if self._catalog.version(policy_id, record["version"], connection=connection):
+                        raise ValueError(
+                            f"policy version is immutable: {policy_id}@{record['version']}"
+                        )
+                    self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                    added += 1
+                    chunks.extend(self._chunks(record))
+                    continue
+
+                if previous["version"] == record["version"]:
+                    if previous["status"] != "active":
+                        raise ValueError(
+                            f"source points to inactive version {policy_id}@{record['version']}; publish a new version"
+                        )
+                    if previous["content_hash"] != record["content_hash"]:
+                        raise ValueError(
+                            f"content changed without a version change for {policy_id}; version must change"
+                        )
+                    unchanged += 1
+                    continue
+
+                if self._catalog.version(policy_id, record["version"], connection=connection):
+                    raise ValueError(
+                        f"policy version is immutable: {policy_id}@{record['version']}"
+                    )
+                if previous["status"] == "active":
+                    self._catalog.supersede(
+                        policy_id,
+                        previous["version"],
+                        occurred_at=occurred_at,
+                        connection=connection,
+                    )
+                self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                changed += 1
+                complete_versions.update(
+                    (policy_id, version["version"])
+                    for version in self._catalog.versions(policy_id, connection=connection)
+                )
+                chunks.extend(self._chunks(record))
+
+            for policy_id, previous in current.items():
+                if policy_id in sources:
+                    continue
+                versions = self._catalog.versions(policy_id, connection=connection)
+                complete_versions.update(
+                    (policy_id, version["version"]) for version in versions
+                )
+                if previous["status"] == "active":
+                    self._catalog.withdraw(
+                        policy_id,
+                        occurred_at=occurred_at,
+                        reason="source file removed",
+                        connection=connection,
+                    )
+                    removed += 1
+
+            if chunks or complete_versions:
+                index_result = self._index.ingest_in_transaction(
+                    connection,
+                    chunks,
+                    complete_versions=complete_versions,
+                )
+            else:
+                index_result = IngestResult(0, 0, 0, ())
+            if before_commit:
+                before_commit(connection)
+
+        return PolicySyncResult(added, changed, removed, unchanged, index_result)
