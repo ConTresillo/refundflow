@@ -12,7 +12,7 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 - [x] Versioned policy catalog and department selection.
 - [ ] Deterministic publish/amend/withdraw/expire simulation with an event timeline.
 
-The current catalog persists immutable version snapshots and publication events in SQLite. Amend/withdraw/expiry transitions and scheduled deterministic effects remain outstanding.
+The current catalog persists immutable version snapshots and publication events in SQLite. Withdrawal is now represented as an append-only event and the current snapshot is marked withdrawn; scheduled changes, amendment/version publishing, expiry/effective-date activation and ingestion/retrieval integration remain outstanding.
 
 ## Phase 3 — Real incremental RAG
 - [ ] Stable chunk IDs, real local retrieval, citations, freshness/version filters.

@@ -31,7 +31,8 @@ class PolicyCatalog:
                     policy_id TEXT NOT NULL,
                     version TEXT NOT NULL,
                     department_id TEXT NOT NULL,
-                    occurred_at TEXT NOT NULL
+                    occurred_at TEXT NOT NULL,
+                    reason TEXT
                 );
                 """
             )
@@ -58,9 +59,9 @@ class PolicyCatalog:
                      json.dumps(record, sort_keys=True, separators=(",", ":"))),
                 )
                 connection.execute(
-                    "INSERT INTO policy_events (event_type, policy_id, version, department_id, occurred_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    ("published", record["id"], record["version"], record["department_id"], occurred_at),
+                    "INSERT INTO policy_events (event_type, policy_id, version, department_id, occurred_at, reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    ("published", record["id"], record["version"], record["department_id"], occurred_at, None),
                 )
         except sqlite3.IntegrityError as error:
             raise ValueError(f"policy version already exists: {record['id']}@{record['version']}") from error
@@ -73,10 +74,38 @@ class PolicyCatalog:
             ).fetchone()
         return json.loads(row["record_json"]) if row else None
 
+    def withdraw(self, policy_id: str, *, occurred_at: str, reason: str) -> None:
+        """Append a withdrawal event and mark the current snapshot withdrawn."""
+        if not isinstance(occurred_at, str) or not occurred_at.strip():
+            raise ValueError("occurred_at must be a non-empty timestamp")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("reason must be a non-empty string")
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT version, department_id, record_json FROM policy_versions "
+                "WHERE policy_id = ? ORDER BY rowid DESC LIMIT 1", (policy_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown policy: {policy_id}")
+            record = json.loads(row["record_json"])
+            if record["status"] != "active":
+                raise ValueError(f"policy is not active: {policy_id}@{row['version']}")
+            record["status"] = "withdrawn"
+            connection.execute(
+                "UPDATE policy_versions SET record_json = ? WHERE policy_id = ? AND version = ?",
+                (json.dumps(record, sort_keys=True, separators=(",", ":")), policy_id, row["version"]),
+            )
+            connection.execute(
+                "INSERT INTO policy_events (event_type, policy_id, version, department_id, occurred_at, reason) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("withdrawn", policy_id, row["version"], row["department_id"], occurred_at, reason),
+            )
+
     def timeline(self) -> list[dict[str, Any]]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT event_type, policy_id, version, department_id, occurred_at "
+                "SELECT event_type, policy_id, version, department_id, occurred_at, reason "
                 "FROM policy_events ORDER BY sequence"
             ).fetchall()
         return [dict(row) for row in rows]
