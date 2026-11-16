@@ -13,6 +13,6 @@
 - Files: `docs/architecture/LLD.md`, `docs/decisions/0016-generation-recovery-contract.md`, `docs/ROADMAP.md`.
 - Dependencies: none.
 - Security/artifact review: local SQLite and curated local sources only; no credentials/network/vector dependency or external effects. No source artifacts generated.
-- Commit/push/CI: pending verification.
+- Commit/push/CI: slice commit `9404c810826249dc6239037a12f192189395b67e` was pushed; remote `main` matched that SHA at verification. GitHub Actions run [43942757252](https://github.com/ConTresillo/refundflow/actions/runs/43942757252) completed successfully across all four matrix jobs.
 - Blocker/limitations: implementation remains outstanding; preserving exact historical rollback requires storing canonical snapshot records in SQLite, not relying on the mutable source directory. The first follow-up should implement migrations and durable generation/provenance status without changing current sync behavior, then add rollback/rebuild in a separate verified slice if needed.
 - Next: implement append-only ingestion generations, immutable manifests/items, and operator status with SQLite transaction/failure tests. Keep Chroma gated.
