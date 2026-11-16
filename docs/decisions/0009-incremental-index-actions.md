@@ -9,9 +9,9 @@
 - Dependencies: none. Existing `.venv/Scripts/python.exe`, Python 3.14.9 / locked environment.
 - TDD: baseline staged tests passed (9). Added red tests for mixed/changed department ownership and multiple chunks per section; observed two expected assertion failures (missing validation and a uniqueness collision). Implemented input validation and removed inappropriate section/hash uniqueness constraint; both regression tests then passed.
 - Tests: `.venv/Scripts/python.exe -m pytest tests/test_incremental_index.py -q` → 9 passed. Full `.venv/Scripts/python.exe -m pytest -q` → 20 passed, 13 pre-existing LangSmith deprecation warnings. `compileall -q app tests`, `pip check` (No broken requirements), and `git diff --check` passed.
-- Actions: no run exists for the in-progress files because they were not yet committed/pushed. Workflow execution on pushed SHA remains required; do not claim green.
+- Actions: workflow run 43856489992, https://github.com/ConTresillo/refundflow/actions/runs/43856489992, on `a090c5d9bb80227aeb212bb3bab8f20ea6a47656`: completed success across Ubuntu/Python 3.10, 3.12, 3.14 and Windows/Python 3.14; each job passed install, dependency check, compile and tests. Ubuntu image migration annotations only.
 - Security/artifact review: GitHub Actions use contents:read, no secrets, SHA-pinned actions, bounded job timeouts and PR concurrency cancellation; source artifact only on manual main dispatch, 14-day retention, commit-addressed tar and checksum. Added-line scan found no hardcoded credentials, shell/eval/exec/pickle/SQL interpolation patterns. No external services, deployment, or package publication. Workflow files reviewed against current official GitHub Actions workflow syntax, reusable-workflow, and secure-use documentation.
-- Commit SHA: pending verification.
-- Remote HEAD: pending push/read-back verification.
-- Blocker: none for commit/push; future end-to-end retrieval requires an application adapter enforcing policy status/effective dates and emitting citations. CI result pending push.
-- Next: wire SQLite FTS5 into policy retrieval with effective-date/status freshness and citation/evaluation tests, then run/repair CI matrix and verify the manual source-delivery workflow behavior without publishing/deploying externally.
+- Commit SHA: `a090c5d9bb80227aeb212bb3bab8f20ea6a47656`.
+- Remote HEAD: verified `origin/main` exactly equals `a090c5d9bb80227aeb212bb3bab8f20ea6a47656` after push.
+- Blocker: none for commit/push; future end-to-end retrieval requires an application adapter enforcing policy status/effective dates and emitting citations. Delivery artifact workflow remains un-dispatched; artifact creation not verified.
+- Next: wire SQLite FTS5 into policy retrieval with effective-date/status freshness and citation/evaluation tests; separately dispatch and verify manual source delivery on main without publishing/deploying externally.
