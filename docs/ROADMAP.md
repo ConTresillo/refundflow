@@ -14,8 +14,8 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 
 Verified: publication, withdrawal and explicit deterministic expiry transitions emit timeline events. Scheduled publish/amend activation, effective-date precedence/conflict explanation, rollback and index synchronization remain outstanding.
 ## Phase 3 — Real incremental RAG
-- [x] Standalone SQLite FTS5 index module with stable chunk IDs, idempotent snapshots, changed/deleted-chunk retirement, rollback, and department/policy/version-scoped search (unit-tested; not yet connected to the application retrieval path).
-- [ ] Connect indexed retrieval to complete, cited policy evidence with SQLite-authoritative status/effective-date filtering.
+- [x] Standalone SQLite FTS5 index module with stable chunk IDs, idempotent snapshots, changed/deleted-chunk retirement, rollback, and department/policy/version-scoped search (unit-tested).
+- [x] Connect indexed retrieval to cited policy evidence with SQLite-authoritative status/effective-date filtering (single-version current catalog lookup; precedence/conflict selection remains open).
 - [ ] After the Chroma security gate clears, implement the optional, rebuildable Chroma local vector-index adapter behind a narrow port, with explicit embeddings and no implicit model download.
 - [ ] Content-hash diff ingestion; changed-file-only processing; idempotence, removal, rollback, and cross-store recovery.
 - [ ] Labeled lexical/vector retrieval and freshness evaluation baseline.
@@ -55,8 +55,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-- [ ] Define narrow catalog, lexical-index, vector-index, and embedding-provider contracts; connect the SQLite FTS5 index to cited policy evidence with deterministic `as_of`/freshness filtering and regression tests. Keep the Chroma port dependency-free until the package security gate clears. Before adding Chroma, verify a patched upstream release and review advisories/dependency lock; if none is available, keep the local lexical path and compare a safer local vector alternative. Do not download an embedding model implicitly; select one only after measuring quality, license, size and platform fit. External deployment remains blocked on an owner-approved target.
-
+- [ ] Implement changed-source-only ingestion synchronized to policy catalog and SQLite index, including deletion, idempotence, rollback/recovery and provenance; retain Chroma security gate.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

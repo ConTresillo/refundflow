@@ -3,6 +3,8 @@ import sqlite3
 import pytest
 
 from app.incremental_index import ChunkInput, SQLitePolicyIndex
+from app.policy_catalog import PolicyCatalog
+from app.retrieval import SQLiteEvidenceRetriever
 
 
 def make_chunk(
@@ -186,3 +188,37 @@ def test_search_can_scope_results_to_a_policy_version(tmp_path):
     assert [item.text for item in historic] == ["policyterm historic"]
     assert [item.text for item in current] == ["policyterm current"]
     assert [item.text for item in other_policy] == ["policyterm other"]
+
+
+def test_sqlite_retriever_rehydrates_only_fresh_catalogued_citations(tmp_path):
+    index = SQLitePolicyIndex(tmp_path / "index.db")
+    catalog = PolicyCatalog(tmp_path / "catalog.sqlite3")
+    records = [
+        {"id": "current", "department_id": "billing", "version": "1", "title": "Current", "status": "active", "effective_from": "2026-01-01", "effective_to": None, "content_hash": "a" * 64, "source_name": "Synthetic collection", "source_url": "", "source_type": "synthetic_demo", "provenance": "authored for demo"},
+        {"id": "future", "department_id": "billing", "version": "1", "title": "Future", "status": "active", "effective_from": "2027-01-01", "effective_to": None, "content_hash": "b" * 64, "source_name": "Synthetic collection", "source_url": "", "source_type": "synthetic_demo", "provenance": "authored for demo"},
+        {"id": "withdrawn", "department_id": "billing", "version": "1", "title": "Withdrawn", "status": "active", "effective_from": "2020-01-01", "effective_to": None, "content_hash": "c" * 64, "source_name": "Synthetic collection", "source_url": "", "source_type": "synthetic_demo", "provenance": "authored for demo"},
+    ]
+    for record in records:
+        catalog.publish(record, occurred_at="2026-01-01T00:00:00Z")
+        index.ingest([make_chunk("refund settlement", policy_id=record["id"], version="1")])
+    catalog.withdraw("withdrawn", occurred_at="2026-01-02T00:00:00Z", reason="test")
+    retriever = SQLiteEvidenceRetriever(index, catalog)
+
+    evidence = retriever.retrieve("refund", departments={"billing"}, as_of="2026-06-01")
+
+    assert [item.policy_id for item in evidence] == ["current"]
+    assert evidence[0].version == "1"
+    assert evidence[0].source_name == "Synthetic collection"
+    assert evidence[0].content_hash == "a" * 64
+    assert evidence[0].citation == "current@1#a"
+    assert evidence[0].text == "refund settlement"
+
+
+def test_sqlite_retriever_rejects_invalid_as_of_date(tmp_path):
+    retriever = SQLiteEvidenceRetriever(
+        SQLitePolicyIndex(tmp_path / "index.db"),
+        PolicyCatalog(tmp_path / "catalog.sqlite3"),
+    )
+
+    with pytest.raises(ValueError, match="ISO calendar date"):
+        retriever.retrieve("refund", departments={"billing"}, as_of="not-a-date")
