@@ -36,6 +36,13 @@ class PolicyCatalog:
                     occurred_at TEXT NOT NULL,
                     reason TEXT
                 );
+                CREATE TABLE IF NOT EXISTS ingestion_sync_outcomes (
+                    policy_id TEXT PRIMARY KEY,
+                    outcome TEXT NOT NULL CHECK (
+                        outcome IN ('added', 'changed', 'unchanged', 'removed')
+                    ),
+                    recorded_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -89,6 +96,34 @@ class PolicyCatalog:
             )
         except sqlite3.IntegrityError as error:
             raise ValueError(f"policy version already exists: {record['id']}@{record['version']}") from error
+
+    def sync_outcomes(
+        self, *, connection: sqlite3.Connection | None = None
+    ) -> dict[str, str]:
+        if connection is None:
+            with closing(self._connect()) as db:
+                return self.sync_outcomes(connection=db)
+        rows = connection.execute(
+            "SELECT policy_id, outcome FROM ingestion_sync_outcomes"
+        ).fetchall()
+        return {row["policy_id"]: row["outcome"] for row in rows}
+
+    def record_sync_outcomes(
+        self,
+        outcomes: dict[str, str],
+        *,
+        occurred_at: str,
+        connection: sqlite3.Connection,
+    ) -> None:
+        if not connection.in_transaction:
+            raise ValueError("record_sync_outcomes requires an active transaction")
+        connection.executemany(
+            """INSERT INTO ingestion_sync_outcomes(policy_id, outcome, recorded_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(policy_id) DO UPDATE SET
+                outcome=excluded.outcome, recorded_at=excluded.recorded_at""",
+            [(policy_id, outcome, occurred_at) for policy_id, outcome in outcomes.items()],
+        )
 
     def current(
         self, policy_id: str, *, connection: sqlite3.Connection | None = None

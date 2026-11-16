@@ -47,7 +47,6 @@ class PolicyIngestionService:
             raise ValueError("policy ingestion requires catalog and index to share one SQLite database")
         self._catalog = catalog
         self._index = index
-        self._last_outcomes: dict[str, str] = {}
 
     @staticmethod
     def _chunks(record: dict[str, Any]) -> list[ChunkInput]:
@@ -69,6 +68,7 @@ class PolicyIngestionService:
     def status(self) -> list[dict[str, str]]:
         """Return current policy provenance and the most recent sync outcome."""
         records = self._catalog.current_records()
+        outcomes = self._catalog.sync_outcomes()
         return [
             {
                 "policy_id": policy_id,
@@ -77,7 +77,7 @@ class PolicyIngestionService:
                 "status": record["status"],
                 "content_hash": record["content_hash"],
                 "provenance": record["provenance"],
-                "outcome": self._last_outcomes.get(policy_id, "active"),
+                "outcome": outcomes.get(policy_id, "active"),
             }
             for policy_id, record in sorted(records.items())
         ]
@@ -119,6 +119,7 @@ class PolicyIngestionService:
         added = changed = removed = unchanged = 0
         chunks: list[ChunkInput] = []
         complete_versions: set[tuple[str, str]] = set()
+        outcomes: dict[str, str] = {}
         with self._catalog.transaction() as connection:
             current = self._catalog.current_records(connection=connection)
 
@@ -131,6 +132,7 @@ class PolicyIngestionService:
                         )
                     self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
                     added += 1
+                    outcomes[policy_id] = "added"
                     chunks.extend(self._chunks(record))
                     continue
 
@@ -144,6 +146,7 @@ class PolicyIngestionService:
                             f"content changed without a version change for {policy_id}; version must change"
                         )
                     unchanged += 1
+                    outcomes[policy_id] = "unchanged"
                     continue
 
                 if self._catalog.version(policy_id, record["version"], connection=connection):
@@ -159,6 +162,7 @@ class PolicyIngestionService:
                     )
                 self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
                 changed += 1
+                outcomes[policy_id] = "changed"
                 complete_versions.update(
                     (policy_id, version["version"])
                     for version in self._catalog.versions(policy_id, connection=connection)
@@ -180,6 +184,7 @@ class PolicyIngestionService:
                         connection=connection,
                     )
                     removed += 1
+                    outcomes[policy_id] = "removed"
 
             if chunks or complete_versions:
                 index_result = self._index.ingest_in_transaction(
@@ -191,18 +196,8 @@ class PolicyIngestionService:
                 index_result = IngestResult(0, 0, 0, ())
             if before_commit:
                 before_commit(connection)
+            self._catalog.record_sync_outcomes(
+                outcomes, occurred_at=occurred_at, connection=connection
+            )
 
-        self._last_outcomes = {
-            policy_id: "added" if policy_id not in current else "changed"
-            for policy_id in sources
-            if policy_id not in current
-            or current[policy_id]["version"] != sources[policy_id]["version"]
-        }
-        self._last_outcomes.update({
-            policy_id: "removed" for policy_id in current if policy_id not in sources
-        })
-        self._last_outcomes.update({
-            policy_id: "unchanged" for policy_id in current
-            if policy_id in sources and current[policy_id]["version"] == sources[policy_id]["version"]
-        })
         return PolicySyncResult(added, changed, removed, unchanged, index_result)

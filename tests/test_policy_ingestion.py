@@ -66,6 +66,17 @@ def test_status_reports_current_document_provenance_and_sync_outcome(tmp_path):
     }]
 
 
+def test_last_sync_outcome_is_durable_across_service_recreation(tmp_path):
+    source_dir, catalog, index, service = make_service(
+        tmp_path, ("billing-refunds", "1.0", "refunddurable clause")
+    )
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    reopened = PolicyIngestionService(source_dir, catalog, index)
+
+    assert reopened.status()[0]["outcome"] == "added"
+
+
 def test_sync_is_idempotent_and_leaves_unchanged_policies_alone(tmp_path):
     _, catalog, index, service = make_service(
         tmp_path,
