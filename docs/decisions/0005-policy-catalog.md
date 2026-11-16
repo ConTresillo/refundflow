@@ -10,7 +10,7 @@
 - Dependencies: none added; `.venv/Scripts/python.exe`.
 - Tests: `.venv/Scripts/python.exe -m pytest tests/test_policy_catalog.py -q` — 2 passed. Full `.venv/Scripts/python.exe -m pytest -q` — 8 passed; 13 pre-existing LangSmith asyncio deprecation warnings. `git diff --check` clean.
 - Security/artifact review: local SQLite only; SQL uses bound parameters; no credentials/network access or generated database committed. Existing frontend dev process left unchanged.
-- Commit SHA(s): pending.
-- Remote HEAD: pending.
+- Commit SHA(s): `d33797225e4aff5c8aca042d080120fbdb831454` (`Add persistent versioned policy catalog`).
+- Remote HEAD: `d33797225e4aff5c8aca042d080120fbdb831454`, verified via `git ls-remote origin refs/heads/main`.
 - Blocker: none for this milestone.
 - Next: implement deterministic amendment/withdrawal/expiry events against the catalog, keeping history immutable and testing event timelines and current-version behavior.
