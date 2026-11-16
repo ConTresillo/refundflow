@@ -1,0 +1,14 @@
+# Decision 0017 — bounded provenance/status behavior slice
+
+- Date/run: 2026-11-17; scheduled RefundFlow development run.
+- Goal: deliver an initial operator read model for current policy provenance and per-document outcome without prematurely claiming generation history.
+- Context: Decision 0016 specifies durable append-only runs/manifests and a persistent active generation. Implementing only an in-memory status result is safe and useful as a bounded vertical slice, but does not satisfy that durability contract.
+- Decision: expose `PolicyIngestionService.status()` as a deterministic, policy-ID-sorted read of the SQLite catalog's current record, including version, department, lifecycle status, content hash and provenance. Retain latest successful sync outcomes in service memory (`added|changed|unchanged|removed`) for currently catalogued policies; before any sync, outcome is `active`. Publish outcome changes only after the catalog/index transaction commits.
+- Consequences/limitations: provenance/status is immediately inspectable within the service lifetime, but last outcome is not durable, removed documents do not appear because the catalog current-record projection excludes them, and there is no run ID/generation pointer. This is explicitly interim; implement durable history per Decision 0016, do not expose this as final audit status.
+- Alternatives: wait for complete generation schema (rejected for this bounded slice); create partial run tables without atomic pointer/snapshot semantics (rejected as misleading); use in-memory status without catalog provenance (rejected).
+- Tests/evaluation: RED observed: focused status test failed with `AttributeError: 'PolicyIngestionService' object has no attribute 'status'`. GREEN: focused ingestion suite 8 passed; full `.venv/Scripts/python.exe -m pytest -q` 32 passed (13 existing LangSmith asyncio deprecation warnings); focused Ruff passed; `compileall -q app tests` passed; `pip check` reported no broken requirements. Repo-wide Ruff was also attempted and failed on pre-existing `conftest.py` and `scripts/make_policies.py` findings plus initial unused test bindings; the changed-file lint passed after cleanup.
+- Security/artifact review: local SQLite/catalog only, no new dependencies, external calls, secrets or generated artifacts; Chroma remains gated.
+- Files: `app/policy_ingestion.py`, `tests/test_policy_ingestion.py`, `docs/ROADMAP.md`, this record.
+- Commit/push/CI: pending verification.
+- Blocker/limitations: no durable ingestion generations or historical rollback/rebuild; status outcome resets with service recreation. No owner approval or external dependency is needed for the SQLite continuation.
+- Next: add append-only successful/failed sync runs, immutable complete manifests/items and an active-generation pointer transactionally, with injected-failure test proving active snapshot stability. Then implement rollback/rebuild separately.

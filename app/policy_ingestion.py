@@ -47,6 +47,7 @@ class PolicyIngestionService:
             raise ValueError("policy ingestion requires catalog and index to share one SQLite database")
         self._catalog = catalog
         self._index = index
+        self._last_outcomes: dict[str, str] = {}
 
     @staticmethod
     def _chunks(record: dict[str, Any]) -> list[ChunkInput]:
@@ -64,6 +65,22 @@ class PolicyIngestionService:
                 }
             )
         return chunks
+
+    def status(self) -> list[dict[str, str]]:
+        """Return current policy provenance and the most recent sync outcome."""
+        records = self._catalog.current_records()
+        return [
+            {
+                "policy_id": policy_id,
+                "version": record["version"],
+                "department_id": record["department_id"],
+                "status": record["status"],
+                "content_hash": record["content_hash"],
+                "provenance": record["provenance"],
+                "outcome": self._last_outcomes.get(policy_id, "active"),
+            }
+            for policy_id, record in sorted(records.items())
+        ]
 
     def sync(
         self,
@@ -175,4 +192,17 @@ class PolicyIngestionService:
             if before_commit:
                 before_commit(connection)
 
+        self._last_outcomes = {
+            policy_id: "added" if policy_id not in current else "changed"
+            for policy_id in sources
+            if policy_id not in current
+            or current[policy_id]["version"] != sources[policy_id]["version"]
+        }
+        self._last_outcomes.update({
+            policy_id: "removed" for policy_id in current if policy_id not in sources
+        })
+        self._last_outcomes.update({
+            policy_id: "unchanged" for policy_id in current
+            if policy_id in sources and current[policy_id]["version"] == sources[policy_id]["version"]
+        })
         return PolicySyncResult(added, changed, removed, unchanged, index_result)

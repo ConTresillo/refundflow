@@ -55,7 +55,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-- [ ] Implement the Decision 0016 foundation: append-only SQLite ingestion runs, immutable complete manifests/items, active-generation pointer, and provenance/status read model. Verify failed sync leaves the pointer/snapshot unchanged; then implement compensating rollback and rebuild from hash-verified snapshots in a bounded follow-up. Chroma remains gated.
+- [ ] Implement immutable SQLite ingestion generations, complete manifests, failed-run tracking, and persistent provenance/outcome read model per Decision 0016. Add transaction failure tests proving no active generation changes; rollback/rebuild follow as separate recovery work. Chroma remains gated.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

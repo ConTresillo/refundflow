@@ -48,6 +48,24 @@ def make_service(tmp_path: Path, *records: tuple[str, str, str]):
 
 
 
+def test_status_reports_current_document_provenance_and_sync_outcome(tmp_path):
+    _, catalog, _, service = make_service(
+        tmp_path, ("billing-refunds", "1.0", "refundstatus clause")
+    )
+    assert service.status() == []
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    assert service.status() == [{
+        "policy_id": "billing-refunds",
+        "version": "1.0",
+        "department_id": "billing",
+        "status": "active",
+        "content_hash": catalog.current("billing-refunds")["content_hash"] if catalog.current("billing-refunds") else "",
+        "provenance": "Authored for an offline test.",
+        "outcome": "added",
+    }]
+
+
 def test_sync_is_idempotent_and_leaves_unchanged_policies_alone(tmp_path):
     _, catalog, index, service = make_service(
         tmp_path,
