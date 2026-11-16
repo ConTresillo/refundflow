@@ -10,6 +10,6 @@
 - Dependency changes: none.
 - Verification: `python -m pytest tests/test_policy_ingestion.py tests/test_policy_catalog.py tests/test_incremental_index.py -q` → 25 passed. Full `python -m pytest -q` → 31 passed. `python -m ruff check app tests` → all checks passed; `python -m compileall -q app tests` → passed; `git diff --check` → passed. `python -m pip check` reports pre-existing environment mismatch: `browser-harness 0.1.13` requires `pillow==12.3.0`, installed Pillow is `13.0.0`; no packages altered. Pytest emits existing pytest-asyncio/AnyIO deprecation warnings.
 - Security/artifact review: local JSON/SQLite only; no credentials, network calls, vector dependency, external side effects or bulk artifacts. SQL statements use bound parameters. Source parse validates the configured curated corpus. Chroma remains gated. No independent reviewer available in this scheduled one-shot run.
-- Commit/push/CI: pending.
+- Commit/push/CI: `fd12ca0f65028843a3f93d32cebc4ca30d8b5082` pushed to `main`; remote ref read-back matches. GitHub Actions CI run 43918580388 completed success for that exact SHA (four matrix jobs passed).
 - Blockers/limitations: no ingestion run/provenance status table, rebuild/generation rollback, filesystem snapshot lock, general parser/chunker, multi-version effective-date precedence or vector/embedding/cache path. Existing tests include warnings from pytest-asyncio/AnyIO dependency versions.
 - Next: define rebuild/rollback generations and provenance/operator status before exposing ingestion via API/UI.
