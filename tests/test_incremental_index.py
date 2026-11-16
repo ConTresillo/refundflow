@@ -58,6 +58,9 @@ def test_ingest_rejects_mixed_departments_for_one_policy_version(tmp_path):
             ]
         )
 
+    assert index.search("billing", department_id="billing") == []
+    assert index.search("support", department_id="support") == []
+
 
 def test_ingest_rejects_department_change_for_existing_policy_version(tmp_path):
     index = SQLitePolicyIndex(tmp_path / "index.db")
@@ -66,9 +69,9 @@ def test_ingest_rejects_department_change_for_existing_policy_version(tmp_path):
     with pytest.raises(ValueError, match="department.*immutable"):
         index.ingest([make_chunk("support rule", department_id="support")])
 
-    assert [
-        item.text for item in index.search("billing", department_id="billing")
-    ] == ["billing rule"]
+    assert [item.text for item in index.search("billing", department_id="billing")] == [
+        "billing rule"
+    ]
     assert index.search("support", department_id="support") == []
 
 
@@ -98,6 +101,14 @@ def test_search_matches_any_query_term(tmp_path):
     results = index.search("new refund", department_id="billing")
 
     assert [item.text for item in results] == ["old refund clause"]
+
+
+def test_punctuation_only_query_returns_no_results(tmp_path):
+    index = SQLitePolicyIndex(tmp_path / "index.db")
+    index.ingest([make_chunk("ordinary text")])
+
+    assert index.search("!!!", department_id="billing") == []
+    assert index.search("   +++   ", department_id="billing") == []
 
 
 def test_multiple_chunks_can_share_a_source_section(tmp_path):
@@ -143,9 +154,7 @@ def test_search_can_scope_results_to_a_policy_version(tmp_path):
     index = SQLitePolicyIndex(tmp_path / "index.db")
     index.ingest([make_chunk("policyterm historic", version="1")])
     index.ingest([make_chunk("policyterm current", version="2")])
-    index.ingest(
-        [make_chunk("policyterm other", policy_id="p2", version="1")]
-    )
+    index.ingest([make_chunk("policyterm other", policy_id="p2", version="1")])
 
     historic = index.search(
         "policyterm", department_id="billing", policy_id="p1", version="1"

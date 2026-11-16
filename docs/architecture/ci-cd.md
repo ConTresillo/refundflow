@@ -6,7 +6,7 @@ RefundFlow has no approved deployment destination and must stay local-first. Con
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual dispatch, and reusable-workflow calls. It runs `compileall`, `pip check`, and the full pytest suite with bounded job timeouts on Ubuntu/Python 3.10, 3.12, and 3.14, plus Windows/Python 3.14 using the repository's exact `requirements-dev.lock`.
+`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual dispatch, and reusable-workflow calls. It runs `pip check`, `ruff check app tests`, `compileall`, and the full pytest suite with bounded job timeouts on Ubuntu/Python 3.10, 3.12, and 3.14, plus Windows/Python 3.14 using the repository's exact `requirements-dev.lock`. Ruff is pinned as a development-only dependency (`ruff==0.17.5`), and lint checks cover `app` and `tests`. The new index module and tests are formatted and checked locally; CI does not yet gate formatting because existing files are not all Ruff-formatted.
 
 The lock is explicitly for the provisioned Windows/Python 3.14 environment and includes Windows-specific packages. Linux jobs therefore resolve the ranges in `pyproject.toml`; they are compatibility checks, not lock-identical reproductions. A portable cross-platform lock remains a separate decision.
 
@@ -34,3 +34,4 @@ For every pushed commit, inspect the GitHub Actions run for that exact SHA using
 - [GitHub Actions secure-use reference](https://docs.github.com/en/actions/reference/security/secure-use) — least-privilege token permissions and secret handling.
 - [GitHub Actions deployments and environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) — environment approvals, branch/tag deployment restrictions, and environment secrets.
 - [Checkout v7.0.1 source](https://github.com/actions/checkout/tree/3d3c42e5aac5ba805825da76410c181273ba90b1), [setup-python v7.1.0 source](https://github.com/actions/setup-python/tree/6d4fd22b20465ccc0f7354476588e8df7c9ca0e0), and [upload-artifact v7.0.2 source](https://github.com/actions/upload-artifact/tree/cf430e030ddbb5b0abf93d22962f4752f3646cd9).
+- [Ruff documentation](https://docs.astral.sh/ruff/) and [MIT license](https://github.com/astral-sh/ruff/blob/main/LICENSE) for the pinned development-only linter.

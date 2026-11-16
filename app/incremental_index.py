@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from collections.abc import Callable, Iterable
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable, TypedDict
+from typing import TypedDict
 
 
 class ChunkInput(TypedDict):
@@ -109,7 +110,9 @@ class SQLitePolicyIndex:
             scope = (chunk.policy_id, chunk.version)
             department = scope_departments.setdefault(scope, chunk.department_id)
             if department != chunk.department_id:
-                raise ValueError("all chunks in one policy version must use one department")
+                raise ValueError(
+                    "all chunks in one policy version must use one department"
+                )
 
         policy_scope = set(complete_versions)
         policy_scope.update(scope_departments)
@@ -145,15 +148,30 @@ class SQLitePolicyIndex:
                     ):
                         reused += 1
                         continue
-                    db.execute("""INSERT INTO policy_chunks
+                    db.execute(
+                        """INSERT INTO policy_chunks
                         (chunk_id, policy_id, version, department_id, section_id, text_hash, body, active)
                         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
                         ON CONFLICT(chunk_id) DO UPDATE SET
                             department_id=excluded.department_id, body=excluded.body, active=1""",
-                        (chunk.chunk_id, chunk.policy_id, chunk.version, chunk.department_id, chunk.section_id,
-                         hashlib.sha256(chunk.text.encode()).hexdigest(), chunk.text))
-                    db.execute("DELETE FROM policy_chunks_fts WHERE chunk_id=?", (chunk.chunk_id,))
-                    db.execute("INSERT INTO policy_chunks_fts(chunk_id, body) VALUES (?, ?)", (chunk.chunk_id, chunk.text))
+                        (
+                            chunk.chunk_id,
+                            chunk.policy_id,
+                            chunk.version,
+                            chunk.department_id,
+                            chunk.section_id,
+                            hashlib.sha256(chunk.text.encode()).hexdigest(),
+                            chunk.text,
+                        ),
+                    )
+                    db.execute(
+                        "DELETE FROM policy_chunks_fts WHERE chunk_id=?",
+                        (chunk.chunk_id,),
+                    )
+                    db.execute(
+                        "INSERT INTO policy_chunks_fts(chunk_id, body) VALUES (?, ?)",
+                        (chunk.chunk_id, chunk.text),
+                    )
                     processed += 1
 
                 if policy_scope:
@@ -162,8 +180,14 @@ class SQLitePolicyIndex:
                     ).fetchall():
                         scope = (row["policy_id"], row["version"])
                         if scope in policy_scope and row["chunk_id"] not in desired_ids:
-                            db.execute("UPDATE policy_chunks SET active=0 WHERE chunk_id=?", (row["chunk_id"],))
-                            db.execute("DELETE FROM policy_chunks_fts WHERE chunk_id=?", (row["chunk_id"],))
+                            db.execute(
+                                "UPDATE policy_chunks SET active=0 WHERE chunk_id=?",
+                                (row["chunk_id"],),
+                            )
+                            db.execute(
+                                "DELETE FROM policy_chunks_fts WHERE chunk_id=?",
+                                (row["chunk_id"],),
+                            )
                             retired += 1
                 if before_commit:
                     before_commit(db)
@@ -183,20 +207,39 @@ class SQLitePolicyIndex:
         top_k: int = 5,
     ) -> list[IndexedChunk]:
         """Search with FTS5 OR semantics, optionally scoped to policy/version."""
-        terms = list(dict.fromkeys(word for word in query.split() if word.strip()))
+        terms = [
+            word.strip('.,;:!?()[]{}\"\'')
+            for word in query.split()
+        ]
+        terms = list(dict.fromkeys(term for term in terms if term))
         if not terms or top_k <= 0:
             return []
         match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
         params = (match, department_id, policy_id, policy_id, version, version, top_k)
         with closing(self._connect()) as db:
-            rows = db.execute("""SELECT c.chunk_id, c.policy_id, c.version, c.department_id,
-                    c.section_id, c.body
-                FROM policy_chunks_fts f JOIN policy_chunks c ON c.chunk_id=f.chunk_id
-                WHERE policy_chunks_fts MATCH ? AND c.department_id=? AND c.active=1
-                    AND (? IS NULL OR c.policy_id=?)
-                    AND (? IS NULL OR c.version=?)
-                ORDER BY rank, c.chunk_id LIMIT ?""", params).fetchall()
+            try:
+                rows = db.execute(
+                    """SELECT c.chunk_id, c.policy_id, c.version, c.department_id,
+                        c.section_id, c.body
+                    FROM policy_chunks_fts f JOIN policy_chunks c ON c.chunk_id=f.chunk_id
+                    WHERE policy_chunks_fts MATCH ? AND c.department_id=? AND c.active=1
+                        AND (? IS NULL OR c.policy_id=?)
+                        AND (? IS NULL OR c.version=?)
+                    ORDER BY rank, c.chunk_id LIMIT ?""",
+                    params,
+                ).fetchall()
+            except sqlite3.OperationalError as error:
+                if str(error).startswith("fts5: syntax error"):
+                    return []
+                raise
         return [
-            IndexedChunk(row["chunk_id"], row["policy_id"], row["version"], row["department_id"], row["section_id"], row["body"])
+            IndexedChunk(
+                row["chunk_id"],
+                row["policy_id"],
+                row["version"],
+                row["department_id"],
+                row["section_id"],
+                row["body"],
+            )
             for row in rows
         ]

@@ -39,7 +39,7 @@ Verified: publication, withdrawal and explicit deterministic expiry transitions 
 - [ ] Interview walkthrough and reproducible demo.
 
 ## Phase 8 — CI/CD
-- [ ] GitHub Actions CI on pull requests and `main`, with pinned actions, least privilege, and supported Python/platform checks.
+- [ ] GitHub Actions CI on pull requests and `main`, with pinned actions, least privilege, Ruff linting, and supported Python/platform checks.
 - [ ] Manual main-only source-artifact delivery gated by the same CI checks.
 - [ ] Select an approved deployment target and configure protected environment, health checks, and rollback before any external deployment.
 
@@ -48,7 +48,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Next slice
 
-Wire the verified SQLite FTS5 index into the policy-source retrieval path, preserving policy/version/effective-date filters and adding citation/freshness evaluation. Then complete Phase 8 CI/CD workflow verification and source-artifact delivery; external deployment remains blocked pending an approved target.
+Define and test the policy-retrieval adapter contract before wiring `SQLitePolicyIndex`: indexed evidence must carry policy provenance, status, effective dates, source section and citations, and retrieval must enforce department/policy/version scope plus deterministic `as_of` eligibility. Then add labeled lexical retrieval/freshness evaluation. Phase 8 CI now includes linting; the manual source-artifact workflow remains to be dispatched and verified. External deployment remains blocked pending an approved target.
 
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.

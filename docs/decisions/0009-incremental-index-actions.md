@@ -14,4 +14,4 @@
 - Commit SHA: `a090c5d9bb80227aeb212bb3bab8f20ea6a47656`.
 - Remote HEAD: verified `origin/main` exactly equals `a090c5d9bb80227aeb212bb3bab8f20ea6a47656` after push.
 - Blocker: none for commit/push; future end-to-end retrieval requires an application adapter enforcing policy status/effective dates and emitting citations. Delivery artifact workflow remains un-dispatched; artifact creation not verified.
-- Next: wire SQLite FTS5 into policy retrieval with effective-date/status freshness and citation/evaluation tests; separately dispatch and verify manual source delivery on main without publishing/deploying externally.
+- Next: define and test the policy-retrieval adapter contract carrying provenance/status/effective dates/citations, then integrate FTS5 and freshness evaluation; dispatch and verify source artifact on main.
