@@ -9,6 +9,6 @@
 - Dependencies: none. Official SQLite FTS5 ranking documentation: https://sqlite.org/fts5.html?bm25= (search result quoted its `ORDER BY rank` relevance semantics; consulted 2026-11-16).
 - Tests: focused `.venv/Scripts/python.exe -m pytest tests/test_incremental_index.py::test_search_ranks_document_with_more_matching_terms_first -q` → 1 passed. Full `.venv/Scripts/python.exe -m pytest -q` → 22 passed; 13 existing LangSmith asyncio deprecation warnings. Ruff `check app tests` → all checks passed. `compileall -q app tests` passed. `pip check` → no broken requirements. `git diff --check` passed.
 - Security/artifact review: changes are one test and roadmap/run records; no production code, dependencies, secrets, generated artifacts, external effects or workflow modifications. Static diff review found no security-sensitive additions.
-- Commit/remote: pending verification and push for this run; no commit made yet.
-- Actions: requires push-triggered CI verification on the eventual commit; not yet run.
+- Commit/remote: `33c4fe9517aa79f2578cccbc05c291e8a4f25791` (`Test FTS5 lexical relevance ranking`) pushed to `main`; `git ls-remote origin refs/heads/main` returned exactly `33c4fe9517aa79f2578cccbc05c291e8a4f25791`.
+- Actions: push-triggered CI run must be checked against this SHA before delivery is complete.
 - Blocker/next: no blocker. Next roadmap work: dispatch/verify the existing manual main-only source-artifact workflow, then define/test the provenance and freshness-complete evidence adapter before indexed retrieval integration. External deployment remains unapproved.
