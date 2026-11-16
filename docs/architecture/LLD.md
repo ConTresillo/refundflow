@@ -18,7 +18,10 @@ classDiagram
   class MCPClientPort {list_tools; call_tool}
   class LocalMCPServer {safe simulation tools}
   class CheckpointerPort {save; load; resume}
-  class SQLiteAdapter {catalog; index; audit; checkpoints}
+  class SQLiteAdapter {catalog; policy status; dates; FTS5 chunks}
+  class VectorIndexPort {upsert; delete; query}
+  class ChromaPersistentAdapter {vectors; chunk IDs; scope metadata}
+  class EmbeddingPort {embed; fingerprint}
   class MockLLMPort {deterministic completion}
   class EvaluationRunner {retrieval; workflow; safety}
   WebUI --> RefundAPI
@@ -31,6 +34,9 @@ classDiagram
   IngestionService --> PolicyCatalog
   IngestionService --> SQLiteAdapter
   Retriever --> SQLiteAdapter
+  Retriever --> VectorIndexPort
+  Retriever --> EmbeddingPort
+  VectorIndexPort <|.. ChromaPersistentAdapter
   Retriever --> SemanticCache
   RefundGraph --> MockLLMPort
   RefundGraph --> CheckpointerPort
@@ -40,7 +46,7 @@ classDiagram
   EvaluationRunner --> RefundGraph
 ```
 
-**Implemented:** `app/policy_catalog.py` provides the SQLite version/event catalog; `app/policies.py` validates synthetic policies and performs deterministic in-memory token-overlap retrieval; `app/incremental_index.py` provides a separate SQLite FTS5 index with stable chunk IDs and atomic full-version snapshot reconciliation. These use SQLite/JSON directly; no application ports exist. **Planned:** pure domain, application use cases, narrow ports, replaceable SQLite/filesystem/LangGraph/mock/MCP adapters; FastAPI/UI remain separate adapters. Graph orchestrates, not owns policy facts or persistence schema. Dependency direction: UI → HTTP → application → domain/ports; adapters implement ports. Add boundaries only at real replaceable dependencies. Mock LLM is deterministic and explicit; no other core subsystem is mocked in integration tests.
+**Implemented:** `app/policy_catalog.py` provides the SQLite version/event catalog; `app/policies.py` validates synthetic policies and performs deterministic in-memory token-overlap retrieval; `app/incremental_index.py` provides a separate SQLite FTS5 index with stable chunk IDs and atomic full-version snapshot reconciliation. These use SQLite/JSON directly; no application ports or Chroma adapter exist yet. **Chosen direction, security-gated and not implemented:** SQLite remains canonical for policy versions, provenance, lifecycle and lexical search; Chroma is the intended local vector-index adapter behind `VectorIndexPort`, conditional on a patched release passing security review; an explicit `EmbeddingPort` supplies vectors and a model/config fingerprint. **Planned:** connect these adapters through tested application ports while keeping FastAPI/UI, graph and MCP separate. Graph orchestrates, not owns policy facts or persistence schema. Dependency direction: UI → HTTP → application → domain/ports; adapters implement ports. Add boundaries only at real replaceable dependencies. Mock LLM is deterministic and explicit; no other core subsystem is mocked in integration tests.
 
 ## Data model, migrations, concurrency
 
@@ -71,7 +77,7 @@ ERD is **planned**, not an existing migration. Actual catalog tables: `policy_ve
 
 The index currently hashes policy/version/section, whitespace-normalized text and the `chunk-v1` marker into a stable chunk ID. Re-ingesting identical content reuses the active row; changed content retires the prior chunk ID within that complete version. Versions omitted from an ingestion remain available for historical retrieval; an empty snapshot requires explicit `complete_versions` so deletion is not inferred from missing input. A policy version's department is immutable (as in the catalog); ingestion rejects mixed departments in one snapshot and department changes from previously indexed rows. A `section_id` may repeat for multiple distinct chunks; the text hash differentiates them and exact duplicate text is deduplicated, but no ordinal/source order is stored yet. Chunk-row, FTS mutation and retirement are one transaction; injected failure rolls back. `active` means present in the indexed snapshot, not legally effective. FTS5 search uses OR semantics and supports department plus optional policy/version filters; the caller must still enforce policy status/effective-date eligibility. Retired rows are retained but no audit event is emitted. Planned: parser/chunker versioning beyond v1, ordinal metadata, citations, evented retirement, effective-date filtering and measured indexes for department/version/status/effective dates, event subject/sequence and ingestion status. Enable SQLite foreign keys per connection and index child keys.[1]
 
-Migrations: ordered immutable SQL files and `schema_migrations(version, checksum, applied_at)`; verify checksum, apply transactionally, test upgrades and backup/restore. Tool choice undecided; stdlib is baseline. SQLite allows multiple readers and one writer; transactions stay short, bounded `SQLITE_BUSY` handling, selective `BEGIN IMMEDIATE` for read-then-write; parsing/embedding/model work never holds write lock.[1] WAL and busy timeout need configuration. Catalog/event/active-index pointer commit atomically; validate sources before transaction and recheck hashes before activation.
+Migrations: ordered immutable SQL files and `schema_migrations(version, checksum, applied_at)`; verify checksum, apply transactionally, test upgrades and backup/restore. SQLite is the selected local catalog and lexical-index store; the migration tool remains undecided, with stdlib as the baseline. SQLite allows multiple readers and one writer; transactions stay short, bounded `SQLITE_BUSY` handling, selective `BEGIN IMMEDIATE` for read-then-write; parsing/embedding/model work never holds write lock.[1] WAL and busy timeout need configuration. Catalog/event/active-index pointer commit atomically; validate sources before transaction and recheck hashes before activation.
 
 ## Policy lifecycle and precedence
 
@@ -126,7 +132,7 @@ sequenceDiagram
   end
 ```
 
-The new index has tests for idempotent reuse, same-version content replacement, explicitly empty-version deletion, version-scoped search and rollback; its database updates are atomic. It does not yet ingest source files or publish/activate generations. The existing application path remains token-overlap retrieval with department/status/date filters and deterministic max-word splitting; it does not call `SQLitePolicyIndex`. Thus local FTS5 indexing exists, but end-to-end indexed retrieval, citations, effective-date selection, vector search, embeddings, cache and labeled metrics remain unimplemented. Do not describe the whole RAG path as integrated or call lexical FTS vector/semantic retrieval.
+The new SQLite index has tests for idempotent reuse, same-version content replacement, explicitly empty-version deletion, version-scoped search and rollback; its database updates are atomic. It does not yet ingest source files or publish/activate generations. The existing application path remains token-overlap retrieval with department/status/date filters and deterministic max-word splitting; it does not call `SQLitePolicyIndex`. Thus local FTS5 indexing exists, but end-to-end indexed retrieval, citations, effective-date selection, Chroma vector search, embeddings, cache and labeled metrics remain unimplemented. The selected future boundary is: `SQLitePolicyIndex` owns chunk text and canonical policy metadata; a `VectorIndexPort` maps stable chunk IDs to vectors in a rebuildable Chroma collection; an `EmbeddingPort` creates vectors and exposes a fingerprint. Search must rehydrate candidates from SQLite and enforce status/effective-date/department/policy scope there before returning evidence. Do not describe the whole RAG path as integrated or call lexical FTS vector/semantic retrieval.
 
 Planned `retrieve(query, Scope, as_of, top_k) -> Evidence[]`: filter before deterministic ranking/ties. Evidence carries chunk/policy/version/department IDs, provenance, section, effective dates, content hash, excerpt, method/score and citation key. Empty remains empty. Decisions pin chunk IDs and policy hashes; freshness check before display and approval/resume; stale evidence triggers reretrieve or stop.
 
@@ -193,14 +199,17 @@ flowchart LR
   App --> DB[(SQLite volume)]
   Graph --> CP[(Durable checkpointer target)]
   Ingest[Curated JSON ingestion] --> App
-  App --> Lexical[Local lexical index]
+  App --> Lexical[SQLite FTS5 lexical index]
+  App --> VectorPort[VectorIndexPort]
+  VectorPort --> Chroma[(Chroma PersistentClient)]
+  Embed[Explicit embedding provider] --> VectorPort
   Eval[Evaluation CLI] --> App
   API --> Logs[Structured logs/run report]
 ```
 
-Planned topology; today only Python modules, JSON policies, SQLite catalog and pytest runnable. Docker/Compose/UI/API/checkpointer/MCP/vector absent. SQLite remains offline baseline (simple, single writer/node); no replacement without measured comparison/ADR. Compare FTS5/stdlib lexical and optional vectors before dependency. Production non-root, health, volume, backup, migration, TLS/reverse proxy remain future work. Piper isolated/falls back to text; no model download without size/license review and approval.
+Planned topology; today only Python modules, JSON policies, SQLite catalog/FTS5 index and pytest runnable. Chroma, Docker/Compose/UI/API/checkpointer/MCP and integrated vector retrieval are not implemented. Chroma is the intended local vector adapter but adoption is blocked until a patched release passes security review; it should then live in an optional dependency extra, use explicit embeddings, and remain rebuildable rather than become a policy source of truth. SQLite remains authoritative for status, provenance and effective dates. Production migration means replacing the SQLite/Chroma adapters behind ports, migrating relational state, rebuilding vectors from canonical chunks, and rerunning retrieval/freshness evaluations; local file formats are not promised to be production-compatible. Production non-root, health, volume, backup, migration, TLS/reverse proxy remain future work. Piper isolated/falls back to text; no model download without size/license review and approval.
 
-Patterns address concrete problems: ports/adapters isolate real replacement boundaries (direct framework coupling is simpler but harms replacement/testing); append-only events plus current projection preserve change history without full event sourcing (current JSON status is mutable); content-addressed chunk IDs preserve unchanged references but require versioned normalization; bounded graph/interrupt enables inspectable safe routing instead of open-ended loops; SQLite favors local operation at cost of serialized writes.
+Patterns address concrete problems: ports/adapters isolate real replacement boundaries (direct framework coupling is simpler but harms replacement/testing); append-only events plus current projection preserve change history without full event sourcing (current JSON status is mutable); content-addressed chunk IDs preserve unchanged references but require versioned normalization; a rebuildable Chroma index avoids making vector data the policy source of truth; bounded graph/interrupt enables inspectable safe routing instead of open-ended loops; SQLite favors local operation at cost of serialized writes.
 
 ## Acceptance and sources
 
@@ -213,3 +222,7 @@ Official sources consulted 2026-11-16:
 [4] [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) — checkpoint/thread/resume behavior.
 [5] [MCP architecture](https://modelcontextprotocol.io/docs/2026-07-28/learn/architecture) — host/client/server and JSON-RPC transport.
 [6] [LangChain Docling loader](https://python.langchain.com/docs/integrations/document_loaders/docling/) — parsing/export options; dependency not selected.
+[7] [Chroma clients](https://docs.trychroma.com/docs/run-chroma/clients) — persistent local client and deployment modes.
+[8] [Chroma embedding functions](https://docs.trychroma.com/docs/embeddings/embedding-functions) — explicit embedding functions and default model behavior.
+[9] [Chroma collection API](https://docs.trychroma.com/reference/python/collection) — upsert, query, metadata filters and delete.
+[10] [Chroma license](https://github.com/chroma-core/chroma/blob/main/LICENSE) — Apache-2.0.
