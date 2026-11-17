@@ -197,6 +197,28 @@ class SQLiteIAMStore:
             ).fetchall()
         return tuple(row["permission_id"] for row in rows)
 
+    def authorization_snapshot(self) -> tuple[Principal, ...]:
+        """Load persisted principals as a refresh input, with no implicit grants.
+
+        Role-to-permission assignments and document grants are not persisted yet;
+        this snapshot therefore cannot authorize access on its own.
+        """
+        with closing(self._connect()) as connection:
+            principals = connection.execute(
+                "SELECT user_id, memberships_json FROM iam_principals ORDER BY user_id"
+            ).fetchall()
+        principal_models = tuple(
+            Principal(
+                user_id=row["user_id"],
+                memberships=tuple(
+                    Membership.model_validate(item)
+                    for item in json.loads(row["memberships_json"])
+                ),
+            )
+            for row in principals
+        )
+        return principal_models
+
     def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
         """Remove a principal to revoke its memberships and audit the change.
 

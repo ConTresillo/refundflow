@@ -61,6 +61,48 @@ def test_permissions_are_tenant_scoped_idempotent_and_audited(tmp_path):
     assert len(store.audit_events()) == 2
 
 
+def test_role_snapshot_loads_only_complete_tenant_roles_for_casbin(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer")
+    store.put_role("southwind", "reviewer")
+    store.put_permission("northstar", "document.read")
+    store.put_permission("southwind", "document.write")
+    store.put_principal(
+        Principal(
+            user_id="alice",
+            memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
+        )
+    )
+
+    assert store.authorization_snapshot() == (
+        Principal(
+            user_id="alice",
+            memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
+        ),
+    )
+
+    store.put_role("northstar", "unassigned")
+    assert store.authorization_snapshot()[0].user_id == "alice"
+
+
+def test_roles_with_missing_permissions_are_not_authorized_snapshot_entries(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer")
+    store.put_principal(
+        Principal(
+            user_id="alice",
+            memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
+        )
+    )
+
+    assert store.authorization_snapshot() == (
+        Principal(
+            user_id="alice",
+            memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
+        ),
+    )
+
+
 def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(
