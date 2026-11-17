@@ -58,6 +58,8 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 - [x] Persist the latest per-policy sync outcome in SQLite; status survives service recreation (interim read model, not generation history).
 - [ ] Implement immutable SQLite ingestion generations, complete manifests, failed-run tracking, and persistent provenance/outcome read model per Decision 0016. Add transaction failure tests proving no active generation changes; rollback/rebuild follow as separate recovery work. Chroma remains gated.
 
+Run 2026-11-17: added a regression asserting injected catalog/index transaction failure preserves the previously persisted sync outcome as well as the active catalog and FTS view. This does not implement failed-run history or generations. RED/GREEN/full-suite and quality checks are recorded in Decision 0019.
+
 ## Definition of done per slice
 A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.
 

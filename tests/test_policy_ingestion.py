@@ -210,6 +210,28 @@ def test_same_version_content_change_is_rejected_without_partial_mutation(tmp_pa
     assert index.search("refundsilentlychanged", department_id="billing") == []
 
 
+def test_failed_sync_preserves_durable_successful_outcome(tmp_path):
+    source_dir, catalog, index, service = make_service(
+        tmp_path, ("billing-refunds", "1.0", "refundpreserve clause")
+    )
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+    write_policy(source_dir, "billing-refunds", "2.0", "refundattempt clause")
+
+    def fail_after_mutations(_connection):
+        raise RuntimeError("injected ingestion failure")
+
+    with pytest.raises(RuntimeError, match="injected ingestion failure"):
+        service.sync(occurred_at="2026-06-02T00:00:00Z", before_commit=fail_after_mutations)
+
+    assert service.status()[0]["outcome"] == "added"
+    current = catalog.current("billing-refunds")
+    assert current is not None
+    assert current["version"] == "1.0"
+    assert [item.text for item in index.search("refundpreserve", department_id="billing")] == [
+        "refundpreserve clause"
+    ]
+
+
 def test_catalog_and_index_changes_roll_back_together(tmp_path):
     source_dir, catalog, index, service = make_service(
         tmp_path, ("billing-refunds", "1.0", "refundbeforecommit clause")
