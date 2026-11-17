@@ -76,7 +76,7 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Phase 2 — tenant-aware IAM domain foundation (Decision 0024).** Added immutable tenant membership, role/permission, document category/scope/grant records and a fail-closed local authorization check. It is not yet wired to the web identity adapter, persistence, an authorization engine, audit, or retrieval, and must not be represented as enterprise authorization. Next acceptance item: compare mature embedded/relationship authorization engines and record the selection; then persist tenant/user/group/membership/role/permission/document/grant data with auditable mutation and current-membership checks.
+**Phase 2 — Casbin-backed tenant-aware IAM foundation (Decision 0025).** The domain adapter delegates policy evaluation to PyCasbin 2.8.0 through `AuthorizationPort`; it builds one synchronized enforcer from an immutable in-memory snapshot. It is not wired to the web identity adapter, persistence/live policy refresh, audit, or retrieval and is not enterprise authorization. Next acceptance item: persist tenant/user/group/membership/role/permission/document/grant state, feed authoritative current membership into the adapter with tested revocation/refresh semantics, and append auditable mutations before wiring authorization ahead of retrieval.
 
 **Previously delivered local Policy Change Lab.**
 

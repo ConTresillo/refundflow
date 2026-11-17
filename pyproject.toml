@@ -16,6 +16,7 @@ dependencies = [
     "uvicorn>=0.27",
     "httpx>=0.27",
     "pydantic-settings>=2.1",
+    "pycasbin>=2.8.0,<3.0",
 ]
 
 [project.optional-dependencies]

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Protocol
 
+import casbin
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -82,42 +83,114 @@ class AccessRequest(BaseModel):
     category: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
 
 
-class AuthorizationEngine:
-    """Small local policy evaluator; unknown actions and resources fail closed."""
+_CASBIN_MODEL = """
+[request_definition]
+r = sub, dom, obj, act, scope, category
 
-    def __init__(self, roles: tuple[Role, ...]) -> None:
+[policy_definition]
+p = sub, kind, dom, obj, act, scope, category
+
+[role_definition]
+g = _, _, _
+g2 = _, _
+g3 = _, _
+
+[policy_effect]
+e = some(where (p.eft == allow))
+
+[matchers]
+m = g3(r.sub, r.dom) && r.dom == p.dom && r.obj == p.obj && r.act == p.act && r.scope == p.scope && (r.category == \"\" || r.category == p.category) && (r.sub == p.sub || g(r.sub, p.sub, r.dom)) && (p.kind != \"role\" || g2(p.sub, r.act))
+"""
+
+
+class AuthorizationPort(Protocol):
+    def authorize(
+        self, principal: Principal, document: Document, request: AccessRequest
+    ) -> bool: ...
+
+
+class CasbinAuthorizationAdapter:
+    """Build one synchronized PyCasbin enforcer from an immutable IAM snapshot."""
+
+    def __init__(
+        self,
+        roles: tuple[Role, ...],
+        *,
+        principals: tuple[Principal, ...],
+        documents: tuple[Document, ...],
+    ) -> None:
         self._roles = {role.id: role for role in roles}
+        self._principals = {principal.user_id: principal for principal in principals}
+        self._documents = {
+            (document.tenant_id, document.id): document for document in documents
+        }
         if len(self._roles) != len(roles):
             raise ValueError("role IDs must be unique")
+        if len(self._principals) != len(principals):
+            raise ValueError("principal user IDs must be unique")
+        if len(self._documents) != len(documents):
+            raise ValueError("document IDs must be unique")
+
+        model = casbin.Model()
+        model.load_model_from_text(_CASBIN_MODEL)
+        self._enforcer = casbin.SyncedEnforcer(model)
+        self._load_snapshot()
 
     def authorize(
         self, principal: Principal, document: Document, request: AccessRequest
     ) -> bool:
-        if request.action != "document.read" or request.scope != document.scope:
+        known_principal = self._principals.get(principal.user_id)
+        stored_document = self._documents.get((document.tenant_id, document.id))
+        if (
+            known_principal is None
+            or known_principal != principal
+            or stored_document is None
+            or stored_document != document
+        ):
             return False
-        if request.category is not None and request.category != document.category:
-            return False
-        membership = next(
-            (item for item in principal.memberships if item.tenant_id == document.tenant_id),
-            None,
-        )
-        if membership is None:
-            return False
-        subjects = {("user", principal.user_id)}
-        subjects.update(("group", group_id) for group_id in membership.group_ids)
-        subjects.update(("role", role_id) for role_id in membership.role_ids)
-        effective_permissions = {
-            permission
-            for role_id in membership.role_ids
-            if role_id in self._roles
-            for permission in self._roles[role_id].permissions
-        }
-        return any(
-            (grant.subject_type, grant.subject_id) in subjects
-            and grant.permission == request.action
-            and (
-                grant.subject_type != "role"
-                or grant.permission in effective_permissions
+
+        return bool(
+            self._enforcer.enforce(
+                f"user:{known_principal.user_id}",
+                f"tenant:{stored_document.tenant_id}",
+                f"document:{stored_document.id}",
+                request.action,
+                request.scope,
+                request.category or "",
             )
-            for grant in document.grants
         )
+
+    def _load_snapshot(self) -> None:
+        for role in self._roles.values():
+            for permission in role.permissions:
+                self._enforcer.add_named_grouping_policy(
+                    "g2", f"role:{role.id}", permission
+                )
+
+        for principal in self._principals.values():
+            user_subject = f"user:{principal.user_id}"
+            for membership in principal.memberships:
+                domain = f"tenant:{membership.tenant_id}"
+                self._enforcer.add_named_grouping_policy("g3", user_subject, domain)
+                for group_id in membership.group_ids:
+                    self._enforcer.add_named_grouping_policy(
+                        "g", user_subject, f"group:{group_id}", domain
+                    )
+                for role_id in membership.role_ids:
+                    self._enforcer.add_named_grouping_policy(
+                        "g", user_subject, f"role:{role_id}", domain
+                    )
+
+        for document in self._documents.values():
+            domain = f"tenant:{document.tenant_id}"
+            resource = f"document:{document.id}"
+            for grant in document.grants:
+                self._enforcer.add_policy(
+                    f"{grant.subject_type}:{grant.subject_id}",
+                    grant.subject_type,
+                    domain,
+                    resource,
+                    grant.permission,
+                    document.scope,
+                    document.category,
+                )
