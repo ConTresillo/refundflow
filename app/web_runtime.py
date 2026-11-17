@@ -2,6 +2,7 @@ import html
 import ipaddress
 import os
 import secrets
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -14,6 +15,7 @@ from app.identity import (
     IdentityPort,
     load_seeded_identities,
 )
+from app.policy_change_service import PolicyChangeService
 
 SESSION_COOKIE = "refundflow_dev_session"
 SESSION_TTL_SECONDS = 3600
@@ -33,11 +35,30 @@ class DevLoginRequest(BaseModel):
     subject_id: str = Field(min_length=1, max_length=128)
 
 
-def create_app(environment: str | None = None) -> FastAPI:
+def create_app(
+    environment: str | None = None,
+    *,
+    policy_service: PolicyChangeService | None = None,
+) -> FastAPI:
     runtime_environment = environment or os.getenv("REFUNDFLOW_ENV", "production")
     if runtime_environment not in {"development", "production"}:
         raise ValueError("REFUNDFLOW_ENV must be 'development' or 'production'")
     dev_enabled = runtime_environment == "development"
+    policy_lab_enabled = os.getenv("REFUNDFLOW_POLICY_LAB") == "1"
+    if policy_service is not None and not dev_enabled:
+        raise ValueError("the policy lab is available only in development mode")
+    if policy_lab_enabled and not dev_enabled:
+        raise ValueError("REFUNDFLOW_POLICY_LAB requires REFUNDFLOW_ENV=development")
+    if policy_service is None and policy_lab_enabled:
+        from app.policy_workspace import create_local_policy_service
+
+        configured_data_dir = os.getenv("REFUNDFLOW_DATA_DIR")
+        data_dir = (
+            Path(configured_data_dir).expanduser()
+            if configured_data_dir
+            else Path(__file__).resolve().parents[1] / "var"
+        )
+        policy_service = create_local_policy_service(data_dir)
 
     app = FastAPI(title="RefundFlow")
     session_store = DevelopmentSessionStore(ttl_seconds=SESSION_TTL_SECONDS)
@@ -51,6 +72,7 @@ def create_app(environment: str | None = None) -> FastAPI:
     app.state.identity_adapter = adapter
     app.state.identity_mode = "development-simulated" if dev_enabled else "unconfigured"
     app.state.session_store = session_store
+    app.state.policy_service = policy_service
 
     @app.middleware("http")
     async def restrict_development_mode_to_loopback(request: Request, call_next):
@@ -181,7 +203,12 @@ def create_app(environment: str | None = None) -> FastAPI:
                 + "</dd><dt>Demo roles</dt><dd>"
                 + html.escape(", ".join(identity.roles))
                 + "</dd></dl>"
-                "<p>These fixture roles are informational only; authorization and document access are not implemented yet.</p>"
+                + (
+                    '<p><a href="/policies">Open the local Policy Change Lab</a></p>'
+                    if policy_service is not None
+                    else ""
+                )
+                + "<p>These fixture roles are informational only; authorization and document access are not implemented yet.</p>"
                 '<button type="button" id="logout">Sign out</button>'
                 '<p id="login-status" aria-live="polite"></p>'
                 "<script>"
@@ -261,6 +288,18 @@ def create_app(environment: str | None = None) -> FastAPI:
             )
         return JSONResponse(
             {"status": "ready", "identity_mode": "development-simulated"}
+        )
+
+    if policy_service is not None:
+        from app.policy_routes import register_policy_routes
+
+        register_policy_routes(
+            app,
+            policy_service,
+            current_identity=current_identity,
+            request_session=request_session,
+            require_same_origin=require_same_origin,
+            require_csrf=require_csrf,
         )
 
     return app

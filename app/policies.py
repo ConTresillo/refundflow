@@ -22,6 +22,16 @@ REQUIRED_POLICY_FIELDS = {
 REGISTRY = {}
 
 
+def compute_content_hash(record: dict) -> str:
+    """Hash canonical policy fields while excluding any derived hash field."""
+    canonical = {key: value for key, value in record.items() if key != "content_hash"}
+    normalized = json.dumps(
+        canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+
 def load_registry(directory: str | Path | None = None) -> dict[str, dict]:
     """Load validated, department-tagged policy records from local JSON files."""
     policy_dir = Path(directory) if directory is not None else POLICY_DIR

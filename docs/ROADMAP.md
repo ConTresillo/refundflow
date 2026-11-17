@@ -17,9 +17,10 @@ Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the
 
 ## Phase 2 — Policy catalog and change simulator
 - [x] Versioned policy catalog and department selection.
-- [ ] Deterministic publish/amend/withdraw/expire simulation with an event timeline.
+- [x] Deterministic, review-before-publish version/amend workflow with an event timeline and verified SQLite FTS refresh.
+- [ ] Scheduled activation, withdrawal/expiry in the workspace UI, and explicit conflict/rollback workflows.
 
-Verified: publication, withdrawal and explicit deterministic expiry transitions emit timeline events. Scheduled publish/amend activation, effective-date precedence/conflict explanation, rollback and index synchronization remain outstanding.
+Verified: publication, withdrawal and explicit deterministic expiry transitions emit timeline events. Scheduled publish/amend activation, effective-date precedence/conflict explanation, rollback and index synchronization remain outstanding. The opt-in Policy Change Lab covers immediate version publication; lifecycle actions and scheduled changes are not implied by that UI.
 ## Phase 3 — Real incremental RAG
 - [x] Standalone SQLite FTS5 index module with stable chunk IDs, idempotent snapshots, changed/deleted-chunk retirement, rollback, and department/policy/version-scoped search (unit-tested).
 - [x] Connect indexed retrieval to cited policy evidence with SQLite-authoritative status/effective-date filtering (single-version current catalog lookup; precedence/conflict selection remains open).
@@ -75,11 +76,13 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Phase 1 — visible app shell and identity boundary** is delivered as a local *development identity simulator*, not OIDC authentication. Runnable instructions are in [the demo guide](DEMO.md). Server-defined tenant/group fixtures, a replaceable `IdentityPort`, loopback-only server-side sessions, CSRF-protected login/logout, `/api/me`, and liveness/readiness are exercised. The production/default mode remains disabled until an identity provider is configured. No arbitrary identity/role headers are accepted. Phase 2 — IAM/document model and deny-by-default authorization — is next. Decision 0020 remains backlog unless needed for safe document ingestion.
-
-Current run evidence: 51 tests passed (13 existing LangSmith deprecation warnings); Ruff `check app tests`, `compileall -q app tests`, and `pip check` passed; a live ephemeral-loopback Uvicorn smoke check returned page 200 and ready status, then stopped cleanly. `git diff --check` passed. See decision 0022 for scope and the exact dev commit/remote verification.
+**Phase 2 — controlled immediate publish/amend in the local Policy Change Lab** is implemented as a development-only extension of the Phase 1 shell. Set `REFUNDFLOW_ENV=development`, `REFUNDFLOW_POLICY_LAB=1`, and optionally `REFUNDFLOW_DATA_DIR` to an available data drive; start the app and open `/policies` after selecting a seeded demo identity. The lab creates durable drafts, shows an exact diff, requires explicit diff-hash review, publishes an immutable version, synchronizes the canonical SQLite catalog/FTS in one transaction and verifies active chunk and FTS snapshots before success. `docs/DEMO.md` contains exact instructions and limits. This is lexical retrieval, not vector/LLM, and the development identities are not an authorization system. Scheduled activation, withdrawal/expiry controls in the UI, explicit rollback, effective-date conflict handling and enterprise IAM are not implemented. Next: Phase 2 IAM/document model, keeping category separate from scope and grants.
 
 Historical report from the prior design run: 34 tests passed (13 existing LangSmith deprecation warnings), Ruff on app/tests passed, compile check and `pip check` passed, and `git diff --check` was clean. Five pre-existing repo-wide Ruff issues in `conftest.py` and `scripts/make_policies.py` were not modified. These are not verification results for the current dev commit; rerun checks before claiming current status.
+
+## Delivery record
+
+The most recently completed slice and its test evidence are recorded in [decision 0023](decisions/0023-policy-change-lab.md). Phase 2's immediate local publish/amend workflow is delivered; the explicit lifecycle and rollback items above remain outstanding.
 
 ## Definition of done per slice
 A slice is done only when its runnable behavior and security acceptance are exercised, focused and applicable full tests pass, docs/decision record include actual results, no secrets or unrelated files are included, the commit is pushed to `dev`, and remote `dev` is read back to verify the pushed SHA. `main` changes only through a PR after required checks pass.

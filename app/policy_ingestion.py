@@ -49,7 +49,7 @@ class PolicyIngestionService:
         self._index = index
 
     @staticmethod
-    def _chunks(record: dict[str, Any]) -> list[ChunkInput]:
+    def chunks_for_record(record: dict[str, Any]) -> list[ChunkInput]:
         chunks: list[ChunkInput] = []
         for excerpt in record["excerpts"]:
             body = " ".join(excerpt.split())
@@ -64,6 +64,15 @@ class PolicyIngestionService:
                 }
             )
         return chunks
+
+    @staticmethod
+    def manifest_hash(sources: dict[str, dict[str, Any]]) -> str:
+        """Hash sorted policy IDs and canonical content hashes for a source snapshot."""
+        material = "\n".join(
+            f"{policy_id}\0{record['content_hash']}"
+            for policy_id, record in sorted(sources.items())
+        )
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     def status(self) -> list[dict[str, str]]:
         """Return current policy provenance and the most recent sync outcome."""
@@ -86,7 +95,8 @@ class PolicyIngestionService:
         self,
         *,
         occurred_at: str,
-        before_commit: Callable[[sqlite3.Connection], None] | None = None,
+        before_commit: Callable[[sqlite3.Connection, PolicySyncResult], None] | None = None,
+        expected_manifest_hash: str | None = None,
     ) -> PolicySyncResult:
         """Apply added, versioned, unchanged, and removed source files atomically."""
         if not isinstance(occurred_at, str) or not occurred_at.strip():
@@ -97,6 +107,9 @@ class PolicyIngestionService:
             raise ValueError("occurred_at must be an ISO date or timestamp") from error
 
         sources = load_registry(self._source_dir)
+        snapshot_hash = self.manifest_hash(sources)
+        if expected_manifest_hash is not None and snapshot_hash != expected_manifest_hash:
+            raise ValueError("policy source changed after its preview; refresh and review again")
         for record in sources.values():
             if record.get("status") != "active":
                 raise ValueError("source files must describe active policy versions")
@@ -133,7 +146,7 @@ class PolicyIngestionService:
                     self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
                     added += 1
                     outcomes[policy_id] = "added"
-                    chunks.extend(self._chunks(record))
+                    chunks.extend(self.chunks_for_record(record))
                     continue
 
                 if previous["version"] == record["version"]:
@@ -167,7 +180,7 @@ class PolicyIngestionService:
                     (policy_id, version["version"])
                     for version in self._catalog.versions(policy_id, connection=connection)
                 )
-                chunks.extend(self._chunks(record))
+                chunks.extend(self.chunks_for_record(record))
 
             for policy_id, previous in current.items():
                 if policy_id in sources:
@@ -194,10 +207,13 @@ class PolicyIngestionService:
                 )
             else:
                 index_result = IngestResult(0, 0, 0, ())
+            result = PolicySyncResult(added, changed, removed, unchanged, index_result)
             if before_commit:
-                before_commit(connection)
+                before_commit(connection, result)
+            if self.manifest_hash(load_registry(self._source_dir)) != snapshot_hash:
+                raise ValueError("policy source changed during sync; retry from a fresh preview")
             self._catalog.record_sync_outcomes(
                 outcomes, occurred_at=occurred_at, connection=connection
             )
 
-        return PolicySyncResult(added, changed, removed, unchanged, index_result)
+        return result

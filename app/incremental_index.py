@@ -70,6 +70,59 @@ class SQLitePolicyIndex:
         return db
 
     @staticmethod
+    def prepare_snapshot(chunks: Iterable[ChunkInput]) -> tuple[IndexedChunk, ...]:
+        """Return deterministic content-addressed rows for a complete policy snapshot."""
+        return tuple(SQLitePolicyIndex._prepare(chunks))
+
+    def verify_snapshot(
+        self,
+        policy_id: str,
+        version: str,
+        expected_chunks: Iterable[ChunkInput],
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> dict[str, object]:
+        """Compare expected rows with both the chunk table and the searchable FTS index."""
+        expected_input = tuple(expected_chunks)
+        if connection is None:
+            with closing(self._connect()) as db:
+                return self.verify_snapshot(
+                    policy_id, version, expected_input, connection=db
+                )
+        expected = {
+            (chunk.chunk_id, chunk.policy_id, chunk.version, chunk.department_id, chunk.section_id, chunk.text)
+            for chunk in self.prepare_snapshot(expected_input)
+        }
+        rows = connection.execute(
+            """SELECT chunk_id, policy_id, version, department_id, section_id, body
+            FROM policy_chunks WHERE policy_id=? AND version=? AND active=1
+            ORDER BY chunk_id""",
+            (policy_id, version),
+        ).fetchall()
+        actual = {
+            (row["chunk_id"], row["policy_id"], row["version"], row["department_id"], row["section_id"], row["body"])
+            for row in rows
+        }
+        fts_rows = connection.execute(
+            """SELECT f.chunk_id, f.body FROM policy_chunks_fts f
+            JOIN policy_chunks c ON c.chunk_id=f.chunk_id
+            WHERE c.policy_id=? AND c.version=? AND c.active=1
+            ORDER BY f.chunk_id""",
+            (policy_id, version),
+        ).fetchall()
+        fts = {(row["chunk_id"], row["body"]) for row in fts_rows}
+        expected_fts = {(item[0], item[5]) for item in expected}
+        return {
+            "verified": expected == actual and expected_fts == fts and len(fts_rows) == len(expected_fts),
+            "expected_count": len(expected),
+            "indexed_count": len(rows),
+            "fts_count": len(fts_rows),
+            "expected_chunk_ids": sorted(item[0] for item in expected),
+            "indexed_chunk_ids": sorted(row["chunk_id"] for row in rows),
+            "fts_chunk_ids": sorted(row["chunk_id"] for row in fts_rows),
+        }
+
+    @staticmethod
     def _prepare(chunks: Iterable[ChunkInput]) -> list[IndexedChunk]:
         prepared = []
         for item in chunks:

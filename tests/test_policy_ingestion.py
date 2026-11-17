@@ -217,7 +217,7 @@ def test_failed_sync_preserves_durable_successful_outcome(tmp_path):
     service.sync(occurred_at="2026-06-01T00:00:00Z")
     write_policy(source_dir, "billing-refunds", "2.0", "refundattempt clause")
 
-    def fail_after_mutations(_connection):
+    def fail_after_mutations(_connection, _result):
         raise RuntimeError("injected ingestion failure")
 
     with pytest.raises(RuntimeError, match="injected ingestion failure"):
@@ -240,7 +240,7 @@ def test_catalog_and_index_changes_roll_back_together(tmp_path):
     events = catalog.timeline()
     write_policy(source_dir, "billing-refunds", "2.0", "refundaftercommit clause")
 
-    def fail_after_mutations(_connection):
+    def fail_after_mutations(_connection, _result):
         raise RuntimeError("injected ingestion failure")
 
     with pytest.raises(RuntimeError, match="injected ingestion failure"):
