@@ -51,8 +51,9 @@ Ranking note: FTS5's built-in `rank` is relevance-ordered with a stable chunk-ID
 - [ ] Interview walkthrough and reproducible demo.
 
 ## Phase 8 — CI/CD
-- [x] GitHub Actions CI on pull requests and pushes to `main` and `dev`, with pinned actions, least privilege, Ruff linting, and supported Python/platform checks. (The `dev` trigger was added; verify it on the first `dev` push.)
+- [x] GitHub Actions CI on pull requests and pushes to `main` and `dev`, with pinned actions, least privilege, Ruff linting, and supported Python/platform checks. The `dev` trigger was verified by run `44006540985` for `ac5b22c6086616352479739faa24e6856ce07e99`.
 - [x] Manual main-only source-artifact delivery gated by the same CI checks.
+- [x] Protect `main`: PR + strict four-job CI required; admin bypass, force-push and deletion disabled. PR approval count is 0 to avoid requiring a second repository collaborator.
 - [ ] Select an approved deployment target and configure protected environment, health checks, and rollback before any external deployment.
 
 Verified: CI run 43878742464 and source-delivery run 43889589858 both succeeded for commit `711973cc6b7b9a114a4c273b83e81115af4050e1`. The delivered tarball's SHA-256 matched its checksum file and its manifest named the same commit. Delivery is a source artifact, not production deployment.
