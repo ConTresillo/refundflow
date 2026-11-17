@@ -2,6 +2,13 @@
 
 Status is updated only from verified work. See [AGENTS.md](../AGENTS.md) for the full product charter and acceptance criteria.
 
+## Delivery model
+
+- `main` is the stable, always-working line; `dev` is the integration branch for active phases. Scheduled/autonomous work stays on `dev`; no direct pushes or merges to `main`.
+- CI runs on pull requests and pushes to both `main` and `dev`. Milestones reach `main` only through a PR after required checks pass (and review if configured).
+- Deliver one small vertical slice at a time. Every phase ends with a locally runnable product demo, focused tests, and a short walkthrough. Repeated docs-only cycles do not count as product progress.
+- This is a rigorous local enterprise simulation, not a production certification or deployment. Requirements are in [the enterprise RAG contract](architecture/enterprise-rag-contract.md).
+
 ## Phase 1 — Foundation and design
 - [x] Confirm the existing venv, package boundaries, lock strategy, and local/offline baseline.
 - [x] HLD/LLD, domain model, safety/threat model, interfaces, ADR template, test/evaluation plan, decision-log format.
@@ -44,7 +51,7 @@ Ranking note: FTS5's built-in `rank` is relevance-ordered with a stable chunk-ID
 - [ ] Interview walkthrough and reproducible demo.
 
 ## Phase 8 — CI/CD
-- [x] GitHub Actions CI on pull requests and `main`, with pinned actions, least privilege, Ruff linting, and supported Python/platform checks.
+- [x] GitHub Actions CI on pull requests and pushes to `main` and `dev`, with pinned actions, least privilege, Ruff linting, and supported Python/platform checks. (The `dev` trigger was added; verify it on the first `dev` push.)
 - [x] Manual main-only source-artifact delivery gated by the same CI checks.
 - [ ] Select an approved deployment target and configure protected environment, health checks, and rollback before any external deployment.
 
@@ -53,15 +60,26 @@ Verified: CI run 43878742464 and source-delivery run 43889589858 both succeeded 
 ## Integration and reuse
 Inventory existing repo capabilities, official docs, maintained libraries and templates before implementation. Prefer wiring stable components over custom replacements; document any gap requiring adaptation. Keep frontend, backend, RAG, graph/MCP, evaluation and deployment modules independently testable, then verify their end-to-end integration. Piper TTS is the differentiating optional module.
 
-## Next slice
+## Enterprise delivery phases (supersede the earlier ordering below)
 
-- [x] Persist the latest per-policy sync outcome in SQLite; status survives service recreation (interim read model, not generation history).
-- [ ] Implement immutable SQLite ingestion generations, complete manifests, failed-run tracking, and persistent provenance/outcome read model per Decision 0016. Add transaction failure tests proving no active generation changes; rollback/rebuild follow as separate recovery work. Chroma remains gated.
+1. **Visible app shell and trusted identity:** local UI/API, OIDC-compatible identity boundary, explicitly labeled dev identity provider, health/readiness and a smoke test.
+2. **IAM and document model:** tenants, users, groups, memberships, roles, permissions, document categories/scopes/grants, deny-by-default checks and audit.
+3. **Permission-scoped RAG:** ACL filters before top-k and before model context, citations rechecked at return, cross-tenant non-interference and revocation tests. Keep Chroma gated.
+4. **Async query service:** durable queue/worker, `202` plus run ID, progress/events, retry/idempotence/cancellation/recovery, async LangGraph and durable checkpointing.
+5. **Bounded agent + HITL:** least-privilege tools, authorized interrupt/resume, audit trail, no real refund or external action.
+6. **Messy-world hardening:** membership/ACL changes mid-run, corrupt/partial ingestion, queue/provider failure, prompt injection, cache isolation, observability, evaluations, recovery and local Compose.
+7. **Interview-ready system design:** work through [the scenario bank](interviews/AI_SYSTEM_DESIGN_SCENARIOS.md), tie answers to working code/tests/measurements, and distinguish representative practice from verified employer-specific questions.
 
-Run 2026-11-17: added a regression asserting injected catalog/index transaction failure preserves the previously persisted sync outcome as well as the active catalog and FTS view. This does not implement failed-run history or generations. RED/GREEN/full-suite and quality checks are recorded in Decision 0019.
+Each phase ends with a locally runnable demo. Design or library-selection spikes are bounded and should unblock implementation, not replace it.
+
+## Current active slice
+
+**Phase 1 — visible app shell and trusted identity.** Inspect current dependencies/runtime and compare maintained OIDC/dev-identity plus UI/API options. Then build the smallest runnable identity-aware page/API and smoke/security tests. Do not accept arbitrary user/role headers as authentication. If a required runtime is absent, report the exact blocker and local alternative. The Decision 0020 generation-manifest schema/status/recovery work remains backlog and can resume when it directly supports safe document ingestion; it is no longer the next product milestone.
+
+Historical report from the prior design run: 34 tests passed (13 existing LangSmith deprecation warnings), Ruff on app/tests passed, compile check and `pip check` passed, and `git diff --check` was clean. Five pre-existing repo-wide Ruff issues in `conftest.py` and `scripts/make_policies.py` were not modified. These are not verification results for the current dev commit; rerun checks before claiming current status.
 
 ## Definition of done per slice
-A slice is done only when focused tests and applicable full tests pass, artifacts/docs/decision record are updated, no unintended files or secrets are included, commit(s) are pushed, and remote `main` is verified.
+A slice is done only when its runnable behavior and security acceptance are exercised, focused and applicable full tests pass, docs/decision record include actual results, no secrets or unrelated files are included, the commit is pushed to `dev`, and remote `dev` is read back to verify the pushed SHA. `main` changes only through a PR after required checks pass.
 
 ## Engineering practice
 Use autonomous, evidence-driven iteration rather than rigid ceremony: each slice starts with a clear outcome and ends with verified behavior, a versioned decision/run record, and a next step. Select test strategy per risk (top-down, bottom-up, sandwich/contract, unit/integration/e2e/evaluation). Final app behavior must be data-driven/configurable, not hard-coded to demo fixtures. Stubs are explicit test/provider-boundary replacements only; record fidelity limits and remaining real integration checks.

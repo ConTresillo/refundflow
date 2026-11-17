@@ -8,7 +8,11 @@ This design records current implementation separately from planned and undecided
 classDiagram
   direction LR
   class WebUI {case intake; policy scope; evidence; approvals}
-  class RefundAPI {validate; commands; read models}
+  class RefundAPI {OIDC principal; authorize; async run commands; read models}
+  class IdentityPort {authenticate; tenant memberships}
+  class AuthorizationPort {check principal action resource scope}
+  class DurableRunQueue {enqueue; retry; cancel; status}
+  class RunWorker {claim; execute; checkpoint; emit events}
   class SimulationService {run; review; resume}
   class RefundGraph {typed state; bounded nodes; routing}
   class PolicyCatalog {publish; withdraw; expire; timeline}
@@ -19,12 +23,19 @@ classDiagram
   class LocalMCPServer {safe simulation tools}
   class CheckpointerPort {save; load; resume}
   class SQLiteAdapter {catalog; policy status; dates; FTS5 chunks}
+  class IdentityRepository {tenants; users; groups; roles; grants}
   class VectorIndexPort {upsert; delete; query}
   class ChromaPersistentAdapter {vectors; chunk IDs; scope metadata}
   class EmbeddingPort {embed; fingerprint}
   class MockLLMPort {deterministic completion}
   class EvaluationRunner {retrieval; workflow; safety}
   WebUI --> RefundAPI
+  RefundAPI --> IdentityPort
+  RefundAPI --> AuthorizationPort
+  RefundAPI --> DurableRunQueue
+  DurableRunQueue --> RunWorker
+  RunWorker --> RefundGraph
+  AuthorizationPort --> IdentityRepository
   RefundAPI --> SimulationService
   SimulationService --> RefundGraph
   RefundGraph --> Retriever
@@ -51,7 +62,10 @@ No application ports or Chroma adapter exist yet. Ingestion synchronization now 
 ### Source-generation recovery and operator status (decision 0016)
 SQLite remains the sole authority. Add append-only ingestion runs/items and a monotonic active-generation pointer; each successful source sync records a complete immutable snapshot manifest (policy/version/content hash and source identity) plus per-item outcome/provenance. Statuses are `running`, `succeeded`, `failed`, and `rolled_back`; item outcomes distinguish `added`, `changed`, `unchanged`, `removed`, and `error`. Only a committed successful run may become active. A failed run retains error summary and never changes the active generation. Rollback is a compensating operation: reapply the selected prior successful manifest to catalog and FTS in one SQLite transaction, append lifecycle events rather than delete history, and record a new successful generation referencing the restored run; do not mutate prior run records. Rebuild reconstructs catalog projections and FTS from the chosen manifest and recorded canonical source bytes/records, validates hashes before commit, and atomically replaces only derived index state. Missing/corrupt source or any validation/write error leaves the previous active generation untouched. Repeated rebuild/rollback of the same snapshot is idempotent. The file source directory is not transactionally locked: capture and hash the complete input manifest before opening the write transaction, then verify it has not changed immediately before commit; mismatch aborts with a failed run and requires retry. This SQLite-only first slice does not synchronize Chroma; any future derived vector adapter must expose lag/error and be rebuildable from the committed manifest, never gate SQLite freshness.
 
-## Data model, migrations, concurrency
+
+## Decision 0020 — ingestion generation manifest schema and status contract
+
+The schema contract and recovery invariants are recorded in [Decision 0020](../decisions/0020-generation-manifest-schema-contract.md). That ingestion-history work remains valid but is now backlog; it is no longer the active product milestone. The current phase priority is the visible app shell and trusted identity in [ROADMAP.md](../ROADMAP.md). Resume the generation implementation when it directly enables safe document ingestion, preserving its idempotence, reopen-persistence, constraint, and unchanged-sync acceptance criteria. Chroma remains outside the canonical contract.
 
 ```mermaid
 erDiagram
@@ -145,7 +159,7 @@ No cache currently. Planned semantic key includes canonical query, department/po
 
 ## LangGraph, approval, MCP
 
-No graph exists. Planned typed state: case/trace, protected scenario reference, explicit scope/as-of, evidence/citations, bounded assessments, simulated proposal, risk/conflict, approval actor/status, termination/error. Avoid PII in checkpoint/audit. Bounded nodes: validate → retrieve → configured specialists → consolidate/safety → proposal → approval interrupt → validate resume → audit. Deterministic routing, one pass per selected role, bounded transient retries/steps; no open-ended delegation or external endpoints.
+No graph or query service exists. Planned typed state: tenant/principal IDs, case/trace, protected scenario reference, authorized scope/as-of, evidence/citations, bounded assessments, simulated proposal, risk/conflict, approval actor/status, termination/error. Avoid bearer tokens and raw PII in queue/checkpoint/audit. Bounded nodes: validate identity/scope → authorize → retrieve authorized evidence → configured specialists → consolidate/safety → proposal → approval interrupt → reauthorize/validate resume → audit. Deterministic routing, one pass per selected role, bounded transient retries/steps; no open-ended delegation or external endpoints. The HTTP path returns `202` with a run ID; a durable worker executes async graph calls, persists status/checkpoints and streams authorized progress. Synchronous SQLite helpers must not block the event loop.
 
 Use checkpointer for thread-scoped state and stable thread ID; business records/audit stay in app DB. LangGraph distinguishes checkpoint from cross-thread store.[3] Interrupt needs checkpointer and same thread ID; resume payload is validated, and code before interrupt may replay, so side effects must be idempotent and after validation.[4]
 
@@ -153,20 +167,32 @@ Use checkpointer for thread-scoped state and stable thread ID; business records/
 sequenceDiagram
   actor Operator
   participant API
-  participant Graph as LangGraph
+  participant AuthZ as Authorization
+  participant Queue as Durable queue
+  participant Worker
+  participant Graph as LangGraph async workflow
   participant DB as SQLite/checkpoint/audit
-  Operator->>API: submit scenario and scope
-  API->>Graph: invoke(input, thread_id)
-  Graph->>Graph: validate, retrieve, assess, safety
-  Graph->>DB: proposal + evidence/version refs
-  Graph-->>API: interrupt(proposal, evidence, reason)
-  API-->>Operator: citations and simulated proposal
-  Operator->>API: approve/deny + actor + note
-  API->>DB: validate pending decision; record intent
-  API->>Graph: resume validated choice on same thread
-  Graph->>Graph: validate; no external action
-  Graph->>DB: append audit outcome
-  Graph-->>API: terminal simulated outcome
+  Operator->>API: POST /runs (scenario + requested scope)
+  API->>AuthZ: authenticate + authorize current principal
+  API->>DB: persist idempotent run + outbox
+  API->>Queue: enqueue run ID
+  API-->>Operator: 202 Accepted + run ID
+  Queue->>Worker: claim run (at-least-once)
+  Worker->>AuthZ: reauthorize actor/scope
+  Worker->>Graph: astream/ainvoke (thread ID)
+  Graph->>AuthZ: authorize each retrieval/tool resource
+  Graph->>DB: checkpoint + authorized status/events
+  Graph-->>Worker: proposal or interrupt
+  Worker->>DB: waiting_approval + evidence refs
+  Operator->>API: GET status/events (actor-scoped)
+  API-->>Operator: progress/citations; no unauthorized text
+  Operator->>API: POST /runs/{id}/resume
+  API->>AuthZ: authorize approver and current document scope
+  API->>Queue: enqueue validated resume command
+  Queue->>Worker: claim resume idempotently
+  Worker->>Graph: resume same checkpoint/thread
+  Worker->>DB: append audit outcome; no external effect
+  API-->>Operator: terminal status/events
 ```
 
 Approval is annotation, not refund permission. Validate pending decision/thread, one-time transition, local actor policy (auth undecided), choice and payload size; idempotency prevents duplicate event. Never hold DB lock while awaiting human. Define crash reconciliation for separate checkpoint/audit writes before release.
@@ -175,7 +201,7 @@ No MCP SDK/server/client exists. Graph tools cross MCP client adapter. Provision
 
 ## API and UI
 
-Neither exists. Planned FastAPI/Pydantic schemas, bounded inputs, stable `{code,message,trace_id,details?}` errors, no PII/stack leakage and OpenAPI contract tests. Candidate endpoints: health, departments, policies, timeline, ingestion, case create/read/trace, approval. Mutations idempotent/audited. Auth undecided; no public exposure or arbitrary MCP/model proxy. UI has scope/disclaimer, loading/empty/error states, evidence/version citations, trace, approvals, keyboard/focus/labels/contrast checks. UI calls API only.
+Neither exists. Planned FastAPI/Pydantic schemas, OIDC-backed principal, server-derived tenant/groups, authorization middleware, bounded inputs, stable `{code,message,trace_id,details?}` errors, no PII/stack leakage and OpenAPI contract tests. Target run API: submit `POST /runs` with idempotency key and receive `202`/run ID; actor-scoped `GET /runs/{id}`; SSE `GET /runs/{id}/events`; authorized `POST /runs/{id}/resume`; separate policy/admin APIs. The durable queue/worker and authz adapter are required for long-running work; FastAPI `BackgroundTasks` alone is not the durable job system. Mutations are idempotent/audited. No public exposure or arbitrary MCP/model proxy. UI has visible dev-identity label, tenant/scope, loading/empty/error states, authorized evidence/version citations, run trace, approvals, keyboard/focus/labels/contrast checks. UI calls API only. See [enterprise contract](enterprise-rag-contract.md).
 
 ## Failure, security, privacy
 
