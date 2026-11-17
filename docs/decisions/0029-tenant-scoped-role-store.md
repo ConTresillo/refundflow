@@ -10,4 +10,4 @@
 - Verification: baseline full suite before edits: 75 passed. After edits, focused store tests: 6 passed; full `.venv/Scripts/python.exe -m pytest -q`: 76 passed (13 LangSmith deprecation warnings). `.venv/Scripts/python.exe -m ruff check app tests`, formatter check on changed Python files, compileall and `git diff --check` passed.
 - Security/limits: tenant key is caller-supplied, not trusted identity; role persistence alone grants no permissions. Role deletion, permissions, grants, identity enforcement, and Casbin snapshot refresh remain unimplemented. Local SQLite only; no external services or customer data.
 - Commit/remote: pending.
-- Next: define and test the path from authoritative persisted role/permission/grant mutations to refreshed authorization snapshot, including fail-closed revocation before retrieval.
+- Next: persist tenant-scoped permission entities with audited, idempotent insertion, without treating permission catalog entries as grants.

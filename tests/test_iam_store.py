@@ -43,6 +43,24 @@ def test_roles_are_tenant_scoped_idempotent_and_audited(tmp_path):
     assert len(store.audit_events()) == 2
 
 
+def test_permissions_are_tenant_scoped_idempotent_and_audited(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_permission("northstar", "document.read", occurred_at="t1")
+    store.put_permission("northstar", "document.read", occurred_at="t2")
+    store.put_permission("southwind", "document.read", occurred_at="t3")
+
+    assert store.list_permissions("northstar") == ("document.read",)
+    assert store.list_permissions("southwind") == ("document.read",)
+    assert store.list_permissions("unknown") == ()
+    events = store.audit_events()
+    assert [event["action"] for event in events] == ["permission.created", "permission.created"]
+    assert events[0]["details_json"] == '{"tenant_id": "northstar"}'
+
+    with pytest.raises(ValueError):
+        store.put_permission("northstar", " ")
+    assert len(store.audit_events()) == 2
+
+
 def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(

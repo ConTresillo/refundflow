@@ -76,7 +76,7 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Phase 2 — Casbin-backed tenant-aware IAM foundation (Decision 0025).** The domain adapter delegates policy evaluation to PyCasbin 2.8.0 through `AuthorizationPort`; it builds one synchronized enforcer from an immutable in-memory snapshot. `SQLiteIAMStore` persists principal memberships plus tenant-scoped groups and roles, atomically appends mutation audit records, and supports audited principal deletion/revocation. Group/role creation is idempotent; listing is tenant-filtered. This remains narrow persistence: permission/document/grant state, identity integration, and retrieval gating remain open. Next: define tested snapshot refresh/integration semantics and persist audited tenant-scoped permission/grant state before retrieval.
+**Phase 2 — Casbin-backed tenant-aware IAM foundation (Decision 0025).** The domain adapter delegates policy evaluation to PyCasbin 2.8.0 through `AuthorizationPort`. `SQLiteIAMStore` persists principal memberships and tenant-scoped groups, roles, and permission identifiers, atomically appends mutation audit records, and supports audited principal deletion/revocation. These records do not yet constitute role assignments or document grants; identity integration and retrieval gating remain open. Next: connect persisted IAM data to explicit versioned Casbin refresh, with permissions still granting no access on their own.
 
 **Previously delivered local Policy Change Lab.**
 

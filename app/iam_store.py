@@ -37,6 +37,11 @@ class SQLiteIAMStore:
                     role_id TEXT NOT NULL,
                     PRIMARY KEY (tenant_id, role_id)
                 );
+                CREATE TABLE IF NOT EXISTS iam_permissions (
+                    tenant_id TEXT NOT NULL,
+                    permission_id TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, permission_id)
+                );
                 CREATE TABLE IF NOT EXISTS iam_audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     action TEXT NOT NULL,
@@ -153,6 +158,44 @@ class SQLiteIAMStore:
                 (tenant_id,),
             ).fetchall()
         return tuple(row["role_id"] for row in rows)
+
+    def put_permission(
+        self, tenant_id: str, permission_id: str, *, occurred_at: str = "local"
+    ) -> None:
+        """Create a tenant-scoped permission and atomically audit insertion."""
+        if not tenant_id.strip() or not permission_id.strip() or not occurred_at.strip():
+            raise ValueError("tenant_id, permission_id, and occurred_at must be non-empty")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO iam_permissions(tenant_id, permission_id) VALUES (?, ?)",
+                    (tenant_id, permission_id),
+                )
+                if cursor.rowcount:
+                    connection.execute(
+                        "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "permission.created",
+                            permission_id,
+                            occurred_at,
+                            json.dumps({"tenant_id": tenant_id}, sort_keys=True),
+                        ),
+                    )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def list_permissions(self, tenant_id: str) -> tuple[str, ...]:
+        """Return permission IDs owned by this tenant in stable order."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT permission_id FROM iam_permissions WHERE tenant_id=? ORDER BY permission_id",
+                (tenant_id,),
+            ).fetchall()
+        return tuple(row["permission_id"] for row in rows)
 
     def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
         """Remove a principal to revoke its memberships and audit the change.
