@@ -43,6 +43,38 @@ def test_roles_are_tenant_scoped_idempotent_and_audited(tmp_path):
     assert len(store.audit_events()) == 2
 
 
+def test_role_permission_assignments_are_tenant_scoped_idempotent_and_audited(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer")
+    store.put_permission("northstar", "document.read")
+    store.put_role("southwind", "reviewer")
+    store.put_permission("southwind", "document.write")
+
+    store.assign_role_permission("northstar", "reviewer", "document.read", occurred_at="t1")
+    store.assign_role_permission("northstar", "reviewer", "document.read", occurred_at="t2")
+    store.assign_role_permission("southwind", "reviewer", "document.write", occurred_at="t3")
+
+    assert store.list_role_permissions("northstar", "reviewer") == ("document.read",)
+    assert store.list_role_permissions("southwind", "reviewer") == ("document.write",)
+    assert store.list_role_permissions("northstar", "missing") == ()
+    assignments = [event for event in store.audit_events() if event["action"] == "role.permission.assigned"]
+    assert len(assignments) == 2
+    assert assignments[0]["details_json"] == '{"permission_id": "document.read", "tenant_id": "northstar"}'
+
+
+def test_role_permission_assignment_rejects_missing_or_cross_tenant_refs(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer")
+    store.put_permission("southwind", "document.read")
+
+    with pytest.raises(ValueError, match="permission does not belong"):
+        store.assign_role_permission("northstar", "reviewer", "document.read")
+    with pytest.raises(ValueError, match="role does not belong"):
+        store.assign_role_permission("northstar", "other", "document.read")
+    assert store.list_role_permissions("northstar", "reviewer") == ()
+    assert not any(event["action"] == "role.permission.assigned" for event in store.audit_events())
+
+
 def test_permissions_are_tenant_scoped_idempotent_and_audited(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_permission("northstar", "document.read", occurred_at="t1")

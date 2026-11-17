@@ -21,6 +21,7 @@ class SQLiteIAMStore:
         self.database = str(database)
         Path(self.database).parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS iam_principals (
@@ -41,6 +42,16 @@ class SQLiteIAMStore:
                     tenant_id TEXT NOT NULL,
                     permission_id TEXT NOT NULL,
                     PRIMARY KEY (tenant_id, permission_id)
+                );
+                CREATE TABLE IF NOT EXISTS iam_role_permissions (
+                    tenant_id TEXT NOT NULL,
+                    role_id TEXT NOT NULL,
+                    permission_id TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, role_id, permission_id),
+                    FOREIGN KEY (tenant_id, role_id)
+                        REFERENCES iam_roles(tenant_id, role_id),
+                    FOREIGN KEY (tenant_id, permission_id)
+                        REFERENCES iam_permissions(tenant_id, permission_id)
                 );
                 CREATE TABLE IF NOT EXISTS iam_audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -197,11 +208,69 @@ class SQLiteIAMStore:
             ).fetchall()
         return tuple(row["permission_id"] for row in rows)
 
+    def assign_role_permission(
+        self,
+        tenant_id: str,
+        role_id: str,
+        permission_id: str,
+        *,
+        occurred_at: str = "local",
+    ) -> None:
+        """Explicitly grant a tenant-owned permission to a tenant-owned role."""
+        if not all(value.strip() for value in (tenant_id, role_id, permission_id, occurred_at)):
+            raise ValueError("tenant, role, permission, and occurred_at must be non-empty")
+        with closing(self._connect()) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                exists = connection.execute(
+                    "SELECT 1 FROM iam_roles WHERE tenant_id=? AND role_id=?",
+                    (tenant_id, role_id),
+                ).fetchone()
+                if exists is None:
+                    raise ValueError("role does not belong to tenant")
+                exists = connection.execute(
+                    "SELECT 1 FROM iam_permissions WHERE tenant_id=? AND permission_id=?",
+                    (tenant_id, permission_id),
+                ).fetchone()
+                if exists is None:
+                    raise ValueError("permission does not belong to tenant")
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO iam_role_permissions VALUES (?, ?, ?)",
+                    (tenant_id, role_id, permission_id),
+                )
+                if cursor.rowcount:
+                    connection.execute(
+                        "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "role.permission.assigned",
+                            role_id,
+                            occurred_at,
+                            json.dumps({"tenant_id": tenant_id, "permission_id": permission_id}, sort_keys=True),
+                        ),
+                    )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def list_role_permissions(self, tenant_id: str, role_id: str) -> tuple[str, ...]:
+        """List explicit permissions for a role, restricted to its tenant."""
+        with closing(self._connect()) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            rows = connection.execute(
+                "SELECT permission_id FROM iam_role_permissions "
+                "WHERE tenant_id=? AND role_id=? ORDER BY permission_id",
+                (tenant_id, role_id),
+            ).fetchall()
+        return tuple(row["permission_id"] for row in rows)
+
     def authorization_snapshot(self) -> tuple[Principal, ...]:
         """Load persisted principals as a refresh input, with no implicit grants.
 
-        Role-to-permission assignments and document grants are not persisted yet;
-        this snapshot therefore cannot authorize access on its own.
+        Explicit role-permission links are persisted separately; this method
+        still returns principals only and cannot authorize access on its own.
         """
         with closing(self._connect()) as connection:
             principals = connection.execute(
