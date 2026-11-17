@@ -75,7 +75,9 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Phase 2 — IAM and document model** is next. The Phase 1 local slice is runnable via [the demo guide](DEMO.md): server-defined tenant/group identities, an `IdentityPort`, loopback-only server-side demo sessions, CSRF-protected login/logout, and health/readiness. This is not OIDC or authorization; the production/default mode remains disabled until an identity provider is configured. Do not accept arbitrary identity/role headers. Decision 0020 generation-manifest work remains backlog unless it directly supports safe document ingestion.
+**Phase 1 — visible app shell and identity boundary** is delivered as a local *development identity simulator*, not OIDC authentication. Runnable instructions are in [the demo guide](DEMO.md). Server-defined tenant/group fixtures, a replaceable `IdentityPort`, loopback-only server-side sessions, CSRF-protected login/logout, `/api/me`, and liveness/readiness are exercised. The production/default mode remains disabled until an identity provider is configured. No arbitrary identity/role headers are accepted. Phase 2 — IAM/document model and deny-by-default authorization — is next. Decision 0020 remains backlog unless needed for safe document ingestion.
+
+Current run evidence: 51 tests passed (13 existing LangSmith deprecation warnings); Ruff `check app tests`, `compileall -q app tests`, and `pip check` passed; a live ephemeral-loopback Uvicorn smoke check returned page 200 and ready status, then stopped cleanly. `git diff --check` passed. See decision 0022 for scope and the exact dev commit/remote verification.
 
 Historical report from the prior design run: 34 tests passed (13 existing LangSmith deprecation warnings), Ruff on app/tests passed, compile check and `pip check` passed, and `git diff --check` was clean. Five pre-existing repo-wide Ruff issues in `conftest.py` and `scripts/make_policies.py` were not modified. These are not verification results for the current dev commit; rerun checks before claiming current status.
 
