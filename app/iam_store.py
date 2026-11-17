@@ -32,6 +32,11 @@ class SQLiteIAMStore:
                     group_id TEXT NOT NULL,
                     PRIMARY KEY (tenant_id, group_id)
                 );
+                CREATE TABLE IF NOT EXISTS iam_roles (
+                    tenant_id TEXT NOT NULL,
+                    role_id TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, role_id)
+                );
                 CREATE TABLE IF NOT EXISTS iam_audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     action TEXT NOT NULL,
@@ -110,6 +115,44 @@ class SQLiteIAMStore:
                 (tenant_id,),
             ).fetchall()
         return tuple(row["group_id"] for row in rows)
+
+    def put_role(
+        self, tenant_id: str, role_id: str, *, occurred_at: str = "local"
+    ) -> None:
+        """Create a tenant-scoped role and atomically append its audit event."""
+        if not tenant_id.strip() or not role_id.strip() or not occurred_at.strip():
+            raise ValueError("tenant_id, role_id, and occurred_at must be non-empty")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO iam_roles(tenant_id, role_id) VALUES (?, ?)",
+                    (tenant_id, role_id),
+                )
+                if cursor.rowcount:
+                    connection.execute(
+                        "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "role.created",
+                            role_id,
+                            occurred_at,
+                            json.dumps({"tenant_id": tenant_id}, sort_keys=True),
+                        ),
+                    )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def list_roles(self, tenant_id: str) -> tuple[str, ...]:
+        """Return role IDs for this tenant only, in stable order."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT role_id FROM iam_roles WHERE tenant_id=? ORDER BY role_id",
+                (tenant_id,),
+            ).fetchall()
+        return tuple(row["role_id"] for row in rows)
 
     def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
         """Remove a principal to revoke its memberships and audit the change.

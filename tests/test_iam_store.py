@@ -25,6 +25,24 @@ def test_group_requires_nonempty_identifiers(tmp_path):
     assert store.audit_events() == []
 
 
+def test_roles_are_tenant_scoped_idempotent_and_audited(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer", occurred_at="t1")
+    store.put_role("northstar", "reviewer", occurred_at="t2")
+    store.put_role("southwind", "reviewer", occurred_at="t3")
+
+    assert store.list_roles("northstar") == ("reviewer",)
+    assert store.list_roles("southwind") == ("reviewer",)
+    assert store.list_roles("unknown") == ()
+    events = store.audit_events()
+    assert [event["action"] for event in events] == ["role.created", "role.created"]
+    assert events[0]["details_json"] == '{"tenant_id": "northstar"}'
+
+    with pytest.raises(ValueError):
+        store.put_role("northstar", " ")
+    assert len(store.audit_events()) == 2
+
+
 def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(

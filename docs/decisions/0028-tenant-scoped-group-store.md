@@ -10,4 +10,5 @@
 - Security/limits: local SQLite only; tenant ID is an explicit method argument, not trusted identity. No user/group membership relation mutation, role/grant storage, API exposure, or retrieval authorization is added. Group creation is currently append-only; deletion lifecycle remains unmodeled.
 - Dependency changes: none.
 - Commit/remote: pending.
-- Blocker/next: none. Next: persist a minimal role/permission or document-grant entity with audit, then test snapshot refresh and revocation integration before retrieval.
+- Follow-up: a subsequent small slice added tenant-scoped role persistence in `app/iam_store.py` with idempotent creation, ordered tenant-only listing and atomic `role.created` audit. Tests cover duplicate behavior, same role ID in separate tenants, empty input, and audit details.
+- Blocker/next: permission/document-grant state and tested snapshot refresh/revocation integration before retrieval.
