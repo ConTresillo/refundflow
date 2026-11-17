@@ -27,6 +27,11 @@ class SQLiteIAMStore:
                     user_id TEXT PRIMARY KEY,
                     memberships_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS iam_groups (
+                    tenant_id TEXT NOT NULL,
+                    group_id TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, group_id)
+                );
                 CREATE TABLE IF NOT EXISTS iam_audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     action TEXT NOT NULL,
@@ -67,6 +72,44 @@ class SQLiteIAMStore:
             except BaseException:
                 connection.rollback()
                 raise
+
+    def put_group(
+        self, tenant_id: str, group_id: str, *, occurred_at: str = "local"
+    ) -> None:
+        """Create an auditable tenant-scoped group, idempotently."""
+        if not tenant_id.strip() or not group_id.strip() or not occurred_at.strip():
+            raise ValueError("tenant_id, group_id, and occurred_at must be non-empty")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = connection.execute(
+                    "INSERT OR IGNORE INTO iam_groups(tenant_id, group_id) VALUES (?, ?)",
+                    (tenant_id, group_id),
+                )
+                if cursor.rowcount:
+                    connection.execute(
+                        "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
+                        "VALUES (?, ?, ?, ?)",
+                        (
+                            "group.created",
+                            group_id,
+                            occurred_at,
+                            json.dumps({"tenant_id": tenant_id}, sort_keys=True),
+                        ),
+                    )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def list_groups(self, tenant_id: str) -> tuple[str, ...]:
+        """Return only group IDs owned by the requested tenant."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT group_id FROM iam_groups WHERE tenant_id=? ORDER BY group_id",
+                (tenant_id,),
+            ).fetchall()
+        return tuple(row["group_id"] for row in rows)
 
     def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
         """Remove a principal to revoke its memberships and audit the change.

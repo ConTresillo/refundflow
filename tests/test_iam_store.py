@@ -4,6 +4,27 @@ from app.iam import Membership, Principal
 from app.iam_store import SQLiteIAMStore
 
 
+def test_groups_are_tenant_scoped_idempotent_and_audited(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_group("northstar", "billing", occurred_at="t1")
+    store.put_group("northstar", "billing", occurred_at="t2")
+    store.put_group("southwind", "billing", occurred_at="t3")
+
+    assert store.list_groups("northstar") == ("billing",)
+    assert store.list_groups("southwind") == ("billing",)
+    assert store.list_groups("unknown") == ()
+    events = store.audit_events()
+    assert [event["action"] for event in events] == ["group.created", "group.created"]
+    assert events[0]["details_json"] == '{"tenant_id": "northstar"}'
+
+
+def test_group_requires_nonempty_identifiers(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    with pytest.raises(ValueError):
+        store.put_group("", "billing")
+    assert store.audit_events() == []
+
+
 def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(
