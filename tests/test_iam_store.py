@@ -23,6 +23,22 @@ def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_pa
     assert store.list_principals() == (Principal(user_id="alice", memberships=()),)
 
 
+def test_delete_principal_revokes_memberships_and_records_audit(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_principal(Principal(user_id="alice", memberships=()))
+
+    assert store.delete_principal("alice", occurred_at="2026-11-17T10:00:00Z") is True
+    assert store.get_principal("alice") is None
+    assert store.delete_principal("alice", occurred_at="2026-11-17T10:01:00Z") is False
+    events = store.audit_events()
+    assert [event["action"] for event in events] == [
+        "principal.updated",
+        "principal.deleted",
+    ]
+    assert events[-1]["subject_id"] == "alice"
+    assert events[-1]["occurred_at"] == "2026-11-17T10:00:00Z"
+
+
 def test_mutations_are_audited_and_failed_mutation_leaves_no_partial_record(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(Principal(user_id="alice", memberships=()))

@@ -68,6 +68,34 @@ class SQLiteIAMStore:
                 connection.rollback()
                 raise
 
+    def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
+        """Remove a principal to revoke its memberships and audit the change.
+
+        Returns False for an absent principal; no redundant event is recorded.
+        The deletion and its audit event share one transaction.
+        """
+        if not occurred_at.strip():
+            raise ValueError("occurred_at must be non-empty")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = connection.execute(
+                    "DELETE FROM iam_principals WHERE user_id=?", (user_id,)
+                )
+                if cursor.rowcount == 0:
+                    connection.commit()
+                    return False
+                connection.execute(
+                    "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
+                    "VALUES (?, ?, ?, ?)",
+                    ("principal.deleted", user_id, occurred_at, "{}"),
+                )
+                connection.commit()
+                return True
+            except BaseException:
+                connection.rollback()
+                raise
+
     def get_principal(self, user_id: str) -> Principal | None:
         with closing(self._connect()) as connection:
             row = connection.execute(
