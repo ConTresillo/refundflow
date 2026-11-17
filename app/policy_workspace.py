@@ -21,10 +21,16 @@ def create_local_policy_service(
     source_dir = root / "policies"
     if not source_dir.exists():
         source_dir.mkdir()
-        initial_sources = Path(seed_dir) if seed_dir is not None else Path(__file__).with_name("policies")
+        initial_sources = (
+            Path(seed_dir)
+            if seed_dir is not None
+            else Path(__file__).with_name("policies")
+        )
         files = sorted(initial_sources.glob("*.json"))
         if not files:
-            raise FileNotFoundError(f"no seed policy documents found in {initial_sources}")
+            raise FileNotFoundError(
+                f"no seed policy documents found in {initial_sources}"
+            )
         for source in files:
             shutil.copyfile(source, source_dir / source.name)
     elif not source_dir.is_dir():

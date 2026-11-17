@@ -31,9 +31,7 @@ def write_policy(
         "license_notes": "Synthetic demo text; not legal advice.",
         "excerpts": [excerpt],
     }
-    (directory / f"{policy_id}.json").write_text(
-        json.dumps(record), encoding="utf-8"
-    )
+    (directory / f"{policy_id}.json").write_text(json.dumps(record), encoding="utf-8")
 
 
 def make_service(tmp_path: Path, *records: tuple[str, str, str]):
@@ -44,8 +42,12 @@ def make_service(tmp_path: Path, *records: tuple[str, str, str]):
     database = tmp_path / "refundflow.sqlite3"
     catalog = PolicyCatalog(database)
     index = SQLitePolicyIndex(database)
-    return source_dir, catalog, index, PolicyIngestionService(source_dir, catalog, index)
-
+    return (
+        source_dir,
+        catalog,
+        index,
+        PolicyIngestionService(source_dir, catalog, index),
+    )
 
 
 def test_status_reports_current_document_provenance_and_sync_outcome(tmp_path):
@@ -55,15 +57,19 @@ def test_status_reports_current_document_provenance_and_sync_outcome(tmp_path):
     assert service.status() == []
     service.sync(occurred_at="2026-06-01T00:00:00Z")
 
-    assert service.status() == [{
-        "policy_id": "billing-refunds",
-        "version": "1.0",
-        "department_id": "billing",
-        "status": "active",
-        "content_hash": catalog.current("billing-refunds")["content_hash"] if catalog.current("billing-refunds") else "",
-        "provenance": "Authored for an offline test.",
-        "outcome": "added",
-    }]
+    assert service.status() == [
+        {
+            "policy_id": "billing-refunds",
+            "version": "1.0",
+            "department_id": "billing",
+            "status": "active",
+            "content_hash": catalog.current("billing-refunds")["content_hash"]
+            if catalog.current("billing-refunds")
+            else "",
+            "provenance": "Authored for an offline test.",
+            "outcome": "added",
+        }
+    ]
 
 
 def test_last_sync_outcome_is_durable_across_service_recreation(tmp_path):
@@ -97,7 +103,12 @@ def test_sync_is_idempotent_and_leaves_unchanged_policies_alone(tmp_path):
 
     assert (first.added, first.changed, first.removed, first.unchanged) == (2, 0, 0, 0)
     assert first.index.processed == 2
-    assert (second.added, second.changed, second.removed, second.unchanged) == (0, 0, 0, 2)
+    assert (second.added, second.changed, second.removed, second.unchanged) == (
+        0,
+        0,
+        0,
+        2,
+    )
     assert second.index.processed == second.index.retired == 0
     assert catalog.timeline() == first_events
     assert {
@@ -121,16 +132,23 @@ def test_changed_version_updates_only_affected_catalog_and_index_snapshot(tmp_pa
 
     result = service.sync(occurred_at="2026-06-02T00:00:00Z")
 
-    assert (result.added, result.changed, result.removed, result.unchanged) == (0, 1, 0, 1)
+    assert (result.added, result.changed, result.removed, result.unchanged) == (
+        0,
+        1,
+        0,
+        1,
+    )
     assert result.index.processed == 1
     assert result.index.retired == 1
     assert catalog.current("billing-refunds")["version"] == "2.0"
     assert catalog.version("billing-refunds", "1.0")["status"] == "superseded"
     assert index.search("refundlegacy", department_id="billing") == []
-    assert [item.text for item in index.search("refundcurrent", department_id="billing")] == [
-        "refundcurrent clause"
-    ]
-    assert index.search("feeunchanged", department_id="billing")[0].chunk_id == stable_id
+    assert [
+        item.text for item in index.search("refundcurrent", department_id="billing")
+    ] == ["refundcurrent clause"]
+    assert (
+        index.search("feeunchanged", department_id="billing")[0].chunk_id == stable_id
+    )
 
 
 def test_removed_source_withdraws_policy_and_retires_its_chunks(tmp_path):
@@ -144,13 +162,18 @@ def test_removed_source_withdraws_policy_and_retires_its_chunks(tmp_path):
 
     result = service.sync(occurred_at="2026-06-02T00:00:00Z")
 
-    assert (result.added, result.changed, result.removed, result.unchanged) == (0, 0, 1, 1)
+    assert (result.added, result.changed, result.removed, result.unchanged) == (
+        0,
+        0,
+        1,
+        1,
+    )
     assert result.index.retired == 1
     assert catalog.current("billing-refunds")["status"] == "withdrawn"
     assert index.search("refundremoved", department_id="billing") == []
-    assert [item.text for item in index.search("feeavailable", department_id="billing")] == [
-        "feeavailable clause"
-    ]
+    assert [
+        item.text for item in index.search("feeavailable", department_id="billing")
+    ] == ["feeavailable clause"]
 
 
 def test_future_effective_source_is_not_published_as_active(tmp_path):
@@ -185,9 +208,9 @@ def test_missing_source_directory_never_looks_like_total_policy_deletion(tmp_pat
         missing_service.sync(occurred_at="2026-06-02T00:00:00Z")
 
     assert catalog.current("billing-refunds")["status"] == "active"
-    assert [item.text for item in index.search("refundkept", department_id="billing")] == [
-        "refundkept clause"
-    ]
+    assert [
+        item.text for item in index.search("refundkept", department_id="billing")
+    ] == ["refundkept clause"]
     assert source_dir.is_dir()
 
 
@@ -204,9 +227,9 @@ def test_same_version_content_change_is_rejected_without_partial_mutation(tmp_pa
 
     assert catalog.current("billing-refunds")["version"] == "1.0"
     assert catalog.timeline() == events
-    assert [item.text for item in index.search("refundstable", department_id="billing")] == [
-        "refundstable clause"
-    ]
+    assert [
+        item.text for item in index.search("refundstable", department_id="billing")
+    ] == ["refundstable clause"]
     assert index.search("refundsilentlychanged", department_id="billing") == []
 
 
@@ -221,15 +244,17 @@ def test_failed_sync_preserves_durable_successful_outcome(tmp_path):
         raise RuntimeError("injected ingestion failure")
 
     with pytest.raises(RuntimeError, match="injected ingestion failure"):
-        service.sync(occurred_at="2026-06-02T00:00:00Z", before_commit=fail_after_mutations)
+        service.sync(
+            occurred_at="2026-06-02T00:00:00Z", before_commit=fail_after_mutations
+        )
 
     assert service.status()[0]["outcome"] == "added"
     current = catalog.current("billing-refunds")
     assert current is not None
     assert current["version"] == "1.0"
-    assert [item.text for item in index.search("refundpreserve", department_id="billing")] == [
-        "refundpreserve clause"
-    ]
+    assert [
+        item.text for item in index.search("refundpreserve", department_id="billing")
+    ] == ["refundpreserve clause"]
 
 
 def test_catalog_and_index_changes_roll_back_together(tmp_path):
@@ -251,7 +276,8 @@ def test_catalog_and_index_changes_roll_back_together(tmp_path):
 
     assert catalog.current("billing-refunds")["version"] == "1.0"
     assert catalog.timeline() == events
-    assert [item.text for item in index.search("refundbeforecommit", department_id="billing")] == [
-        "refundbeforecommit clause"
-    ]
+    assert [
+        item.text
+        for item in index.search("refundbeforecommit", department_id="billing")
+    ] == ["refundbeforecommit clause"]
     assert index.search("refundaftercommit", department_id="billing") == []

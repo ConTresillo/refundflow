@@ -12,9 +12,19 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 POLICY_DIR = HERE / "policies"
 REQUIRED_POLICY_FIELDS = {
-    "id", "department_id", "version", "title", "status", "effective_from",
-    "effective_to", "source_type", "source_name", "source_url", "provenance",
-    "license_notes", "excerpts",
+    "id",
+    "department_id",
+    "version",
+    "title",
+    "status",
+    "effective_from",
+    "effective_to",
+    "source_type",
+    "source_name",
+    "source_url",
+    "provenance",
+    "license_notes",
+    "excerpts",
 }
 
 # Legacy real-world excerpts are deliberately retained in this excluded
@@ -29,7 +39,6 @@ def compute_content_hash(record: dict) -> str:
         canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
 
 
 def load_registry(directory: str | Path | None = None) -> dict[str, dict]:
@@ -47,14 +56,26 @@ def load_registry(directory: str | Path | None = None) -> dict[str, dict]:
                 f"invalid policy record in {path.name}: missing {sorted(missing)} or id"
             )
         if policy["source_type"] != "synthetic_demo":
-            raise ValueError(f"invalid policy record in {path.name}: source must be synthetic_demo")
+            raise ValueError(
+                f"invalid policy record in {path.name}: source must be synthetic_demo"
+            )
         if policy_id != path.stem or policy_id in reg:
-            raise ValueError(f"invalid policy record in {path.name}: id must be unique and match filename")
-        if not isinstance(policy["excerpts"], list) or not policy["excerpts"] or not all(
-            isinstance(item, str) and item.strip() for item in policy["excerpts"]
+            raise ValueError(
+                f"invalid policy record in {path.name}: id must be unique and match filename"
+            )
+        if (
+            not isinstance(policy["excerpts"], list)
+            or not policy["excerpts"]
+            or not all(
+                isinstance(item, str) and item.strip() for item in policy["excerpts"]
+            )
         ):
-            raise ValueError(f"invalid policy record in {path.name}: excerpts must be non-empty strings")
-        normalized = json.dumps(policy, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            raise ValueError(
+                f"invalid policy record in {path.name}: excerpts must be non-empty strings"
+            )
+        normalized = json.dumps(
+            policy, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
         policy["content_hash"] = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         reg[policy_id] = policy
     return reg
@@ -65,21 +86,24 @@ def make_documents(registry: dict[str, dict]) -> list[dict]:
     docs: list[dict] = []
     for policy_id, policy in registry.items():
         for excerpt in policy.get("excerpts", []):
-            docs.append({
-                "policy_id": policy_id,
-                "department_id": policy["department_id"],
-                "version": policy["version"],
-                "status": policy["status"],
-                "effective_from": policy["effective_from"],
-                "effective_to": policy["effective_to"],
-                "source_type": policy["source_type"],
-                "content_hash": policy["content_hash"],
-                "title": policy["title"],
-                "source_name": policy["source_name"],
-                "source_url": policy["source_url"],
-                "chunk": excerpt,
-            })
+            docs.append(
+                {
+                    "policy_id": policy_id,
+                    "department_id": policy["department_id"],
+                    "version": policy["version"],
+                    "status": policy["status"],
+                    "effective_from": policy["effective_from"],
+                    "effective_to": policy["effective_to"],
+                    "source_type": policy["source_type"],
+                    "content_hash": policy["content_hash"],
+                    "title": policy["title"],
+                    "source_name": policy["source_name"],
+                    "source_url": policy["source_url"],
+                    "chunk": excerpt,
+                }
+            )
     return docs
+
 
 def split_text(text: str, max_words: int | None = None) -> list[str]:
     """Deterministic chunking. Without ``max_words`` the whole text is one chunk.

@@ -35,7 +35,9 @@ def write_policy(directory: Path, policy_id: str, version: str, text: str) -> No
 def make_client(tmp_path: Path):
     source_dir = tmp_path / "policies"
     source_dir.mkdir()
-    write_policy(source_dir, "billing-refunds", "1.0", "legacyclaim needs an order receipt.")
+    write_policy(
+        source_dir, "billing-refunds", "1.0", "legacyclaim needs an order receipt."
+    )
     database = tmp_path / "refundflow.sqlite3"
     catalog = PolicyCatalog(database)
     index = SQLitePolicyIndex(database)
@@ -73,7 +75,9 @@ def make_client(tmp_path: Path):
 def test_policy_lab_requires_the_local_demo_identity(tmp_path):
     source_dir = tmp_path / "policies"
     source_dir.mkdir()
-    write_policy(source_dir, "billing-refunds", "1.0", "legacyclaim needs an order receipt.")
+    write_policy(
+        source_dir, "billing-refunds", "1.0", "legacyclaim needs an order receipt."
+    )
     database = tmp_path / "refundflow.sqlite3"
     catalog = PolicyCatalog(database)
     index = SQLitePolicyIndex(database)
@@ -128,7 +132,9 @@ def test_policy_change_ui_api_review_publish_and_retrieval_are_end_to_end(tmp_pa
         json={"diff_hash": draft["diff_hash"]},
     )
     assert missing_origin.status_code == 403
-    assert client.get(f"/api/policy-drafts/{draft['draft_id']}").json()["state"] == "draft"
+    assert (
+        client.get(f"/api/policy-drafts/{draft['draft_id']}").json()["state"] == "draft"
+    )
 
     reviewed = client.post(
         f"/api/policy-drafts/{draft['draft_id']}/review",

@@ -44,7 +44,9 @@ class PolicyIngestionService:
         catalog_path = Path(catalog.database).resolve()
         index_path = Path(index.path).resolve()
         if catalog_path != index_path:
-            raise ValueError("policy ingestion requires catalog and index to share one SQLite database")
+            raise ValueError(
+                "policy ingestion requires catalog and index to share one SQLite database"
+            )
         self._catalog = catalog
         self._index = index
 
@@ -95,21 +97,29 @@ class PolicyIngestionService:
         self,
         *,
         occurred_at: str,
-        before_commit: Callable[[sqlite3.Connection, PolicySyncResult], None] | None = None,
+        before_commit: Callable[[sqlite3.Connection, PolicySyncResult], None]
+        | None = None,
         expected_manifest_hash: str | None = None,
     ) -> PolicySyncResult:
         """Apply added, versioned, unchanged, and removed source files atomically."""
         if not isinstance(occurred_at, str) or not occurred_at.strip():
             raise ValueError("occurred_at must be an ISO date or timestamp")
         try:
-            sync_date = datetime.fromisoformat(occurred_at.replace("Z", "+00:00")).date()
+            sync_date = datetime.fromisoformat(
+                occurred_at.replace("Z", "+00:00")
+            ).date()
         except ValueError as error:
             raise ValueError("occurred_at must be an ISO date or timestamp") from error
 
         sources = load_registry(self._source_dir)
         snapshot_hash = self.manifest_hash(sources)
-        if expected_manifest_hash is not None and snapshot_hash != expected_manifest_hash:
-            raise ValueError("policy source changed after its preview; refresh and review again")
+        if (
+            expected_manifest_hash is not None
+            and snapshot_hash != expected_manifest_hash
+        ):
+            raise ValueError(
+                "policy source changed after its preview; refresh and review again"
+            )
         for record in sources.values():
             if record.get("status") != "active":
                 raise ValueError("source files must describe active policy versions")
@@ -121,9 +131,13 @@ class PolicyIngestionService:
                     else None
                 )
             except (KeyError, TypeError, ValueError) as error:
-                raise ValueError(f"invalid effective dates for policy {record.get('id')}") from error
+                raise ValueError(
+                    f"invalid effective dates for policy {record.get('id')}"
+                ) from error
             if effective_to is not None and effective_to < effective_from:
-                raise ValueError(f"effective_to precedes effective_from for policy {record['id']}")
+                raise ValueError(
+                    f"effective_to precedes effective_from for policy {record['id']}"
+                )
             if effective_from > sync_date:
                 raise ValueError(
                     f"future effective policy version cannot be activated by source sync: {record['id']}"
@@ -139,11 +153,15 @@ class PolicyIngestionService:
             for policy_id, record in sources.items():
                 previous = current.get(policy_id)
                 if previous is None:
-                    if self._catalog.version(policy_id, record["version"], connection=connection):
+                    if self._catalog.version(
+                        policy_id, record["version"], connection=connection
+                    ):
                         raise ValueError(
                             f"policy version is immutable: {policy_id}@{record['version']}"
                         )
-                    self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                    self._catalog.publish(
+                        record, occurred_at=occurred_at, connection=connection
+                    )
                     added += 1
                     outcomes[policy_id] = "added"
                     chunks.extend(self.chunks_for_record(record))
@@ -162,7 +180,9 @@ class PolicyIngestionService:
                     outcomes[policy_id] = "unchanged"
                     continue
 
-                if self._catalog.version(policy_id, record["version"], connection=connection):
+                if self._catalog.version(
+                    policy_id, record["version"], connection=connection
+                ):
                     raise ValueError(
                         f"policy version is immutable: {policy_id}@{record['version']}"
                     )
@@ -173,12 +193,16 @@ class PolicyIngestionService:
                         occurred_at=occurred_at,
                         connection=connection,
                     )
-                self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                self._catalog.publish(
+                    record, occurred_at=occurred_at, connection=connection
+                )
                 changed += 1
                 outcomes[policy_id] = "changed"
                 complete_versions.update(
                     (policy_id, version["version"])
-                    for version in self._catalog.versions(policy_id, connection=connection)
+                    for version in self._catalog.versions(
+                        policy_id, connection=connection
+                    )
                 )
                 chunks.extend(self.chunks_for_record(record))
 
@@ -211,7 +235,9 @@ class PolicyIngestionService:
             if before_commit:
                 before_commit(connection, result)
             if self.manifest_hash(load_registry(self._source_dir)) != snapshot_hash:
-                raise ValueError("policy source changed during sync; retry from a fresh preview")
+                raise ValueError(
+                    "policy source changed during sync; retry from a fresh preview"
+                )
             self._catalog.record_sync_outcomes(
                 outcomes, occurred_at=occurred_at, connection=connection
             )

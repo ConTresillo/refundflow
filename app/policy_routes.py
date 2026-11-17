@@ -175,12 +175,16 @@ def register_policy_routes(
     @app.get("/api/policies")
     def policy_list(request: Request) -> JSONResponse:
         ensure_identity(request)
-        return JSONResponse(service.list_policies(), headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            service.list_policies(), headers={"Cache-Control": "no-store"}
+        )
 
     @app.get("/api/policy-drafts")
     def draft_list(request: Request) -> JSONResponse:
         ensure_identity(request)
-        return JSONResponse(service.list_drafts(), headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            service.list_drafts(), headers={"Cache-Control": "no-store"}
+        )
 
     @app.post("/api/policy-drafts", status_code=201)
     def create_policy_draft(
@@ -193,7 +197,9 @@ def register_policy_routes(
             draft = service.create_draft(**payload.model_dump())
         except PolicyChangeError as error:
             raise service_error(error) from error
-        return JSONResponse(draft, status_code=201, headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            draft, status_code=201, headers={"Cache-Control": "no-store"}
+        )
 
     @app.get("/api/policy-drafts/{draft_id}")
     def read_policy_draft(request: Request, draft_id: str) -> JSONResponse:
@@ -237,7 +243,9 @@ def register_policy_routes(
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> JSONResponse:
         ensure_identity(request)
-        return JSONResponse(service.history(limit=limit), headers={"Cache-Control": "no-store"})
+        return JSONResponse(
+            service.history(limit=limit), headers={"Cache-Control": "no-store"}
+        )
 
     @app.get("/api/policy-search")
     def policy_search(
@@ -249,7 +257,9 @@ def register_policy_routes(
     ) -> JSONResponse:
         ensure_identity(request)
         try:
-            results = service.search(query, policy_id=policy_id, as_of=as_of, top_k=top_k)
+            results = service.search(
+                query, policy_id=policy_id, as_of=as_of, top_k=top_k
+            )
         except PolicyChangeError as error:
             raise service_error(error) from error
         return JSONResponse(results, headers={"Cache-Control": "no-store"})

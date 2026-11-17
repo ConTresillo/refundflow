@@ -55,7 +55,9 @@ class PolicyChangeService:
         self._retriever = SQLiteEvidenceRetriever(index, catalog)
         self._database = Path(catalog.database).resolve()
         if self._database != Path(index.path).resolve():
-            raise ValueError("policy change service requires one shared SQLite database")
+            raise ValueError(
+                "policy change service requires one shared SQLite database"
+            )
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         with closing(self._connect()) as connection:
             connection.executescript(
@@ -145,16 +147,16 @@ class PolicyChangeService:
 
     @staticmethod
     def _json(record: dict[str, Any]) -> str:
-        return json.dumps(record, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            record, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
 
     @staticmethod
     def _record_without_hash(record: dict[str, Any]) -> dict[str, Any]:
         return {key: value for key, value in record.items() if key != "content_hash"}
 
     @staticmethod
-    def _format_diff(
-        old_record: dict[str, Any], new_record: dict[str, Any]
-    ) -> str:
+    def _format_diff(old_record: dict[str, Any], new_record: dict[str, Any]) -> str:
         lines = [
             f"Policy: {old_record['id']}",
             f"Version: {old_record['version']} -> {new_record['version']}",
@@ -165,7 +167,9 @@ class PolicyChangeService:
             lines.append(f"Content hash: {old_hash} -> {new_hash}")
         for field in ("title", "effective_from", "effective_to"):
             if old_record.get(field) != new_record.get(field):
-                lines.append(f"{field}: {old_record.get(field)!r} -> {new_record.get(field)!r}")
+                lines.append(
+                    f"{field}: {old_record.get(field)!r} -> {new_record.get(field)!r}"
+                )
         lines.extend(
             difflib.unified_diff(
                 old_record.get("excerpts", []),
@@ -206,43 +210,65 @@ class PolicyChangeService:
         """Create a durable proposal; this never changes source, catalog, or FTS."""
         source_path = self._source_path(policy_id)
         if not self._VERSION.fullmatch(new_version):
-            raise PolicyChangeError("new version must be a short identifier without spaces")
+            raise PolicyChangeError(
+                "new version must be a short identifier without spaces"
+            )
         if not isinstance(title, str) or not title.strip() or len(title) > 200:
             raise PolicyChangeError("title must contain 1 to 200 characters")
         if not isinstance(excerpts, list) or not 1 <= len(excerpts) <= 20:
             raise PolicyChangeError("provide between 1 and 20 policy clauses")
-        if any(not isinstance(item, str) or not item.strip() or len(item) > 5000 for item in excerpts):
-            raise PolicyChangeError("each policy clause must contain 1 to 5000 characters")
+        if any(
+            not isinstance(item, str) or not item.strip() or len(item) > 5000
+            for item in excerpts
+        ):
+            raise PolicyChangeError(
+                "each policy clause must contain 1 to 5000 characters"
+            )
         if sum(len(item) for item in excerpts) > 20000:
             raise PolicyChangeError("combined policy text exceeds 20000 characters")
         try:
             start = date.fromisoformat(effective_from)
             end = date.fromisoformat(effective_to) if effective_to else None
         except (TypeError, ValueError) as error:
-            raise PolicyChangeError("effective dates must be ISO calendar dates") from error
+            raise PolicyChangeError(
+                "effective dates must be ISO calendar dates"
+            ) from error
         if end is not None and end < start:
             raise PolicyChangeError("effective_to cannot precede effective_from")
         if start > self._now().date():
-            raise PolicyChangeError("future effective dates require a scheduled-publish workflow")
+            raise PolicyChangeError(
+                "future effective dates require a scheduled-publish workflow"
+            )
 
         current = self._catalog.current(policy_id)
         if current is None or current.get("status") != "active":
             raise PolicyChangeError("only an active catalog policy can be edited")
-        if current["version"] != expected_version or current["content_hash"] != expected_hash:
-            raise PolicyChangeError("policy changed since the editor loaded it; refresh and retry")
+        if (
+            current["version"] != expected_version
+            or current["content_hash"] != expected_hash
+        ):
+            raise PolicyChangeError(
+                "policy changed since the editor loaded it; refresh and retry"
+            )
         if self._catalog.version(policy_id, new_version) is not None:
-            raise PolicyChangeError("policy versions are immutable; choose a new unused version")
+            raise PolicyChangeError(
+                "policy versions are immutable; choose a new unused version"
+            )
         try:
             base_source_bytes = source_path.read_bytes()
             source = load_registry(self._source_dir).get(policy_id)
         except (OSError, ValueError) as error:
-            raise PolicyChangeError("policy source is unavailable or invalid") from error
+            raise PolicyChangeError(
+                "policy source is unavailable or invalid"
+            ) from error
         if (
             source is None
             or source.get("version") != current["version"]
             or source.get("content_hash") != current["content_hash"]
         ):
-            raise PolicyChangeError("policy source differs from the active catalog; review source drift first")
+            raise PolicyChangeError(
+                "policy source differs from the active catalog; review source drift first"
+            )
 
         proposed = self._record_without_hash(source)
         proposed.update(
@@ -256,10 +282,14 @@ class PolicyChangeService:
             }
         )
         changed_fields = [
-            field for field in self._EDITABLE_FIELDS if proposed.get(field) != source.get(field)
+            field
+            for field in self._EDITABLE_FIELDS
+            if proposed.get(field) != source.get(field)
         ]
         if not changed_fields:
-            raise PolicyChangeError("draft has no document changes beyond its version label")
+            raise PolicyChangeError(
+                "draft has no document changes beyond its version label"
+            )
         new_hash = compute_content_hash(proposed)
         diff_text = self._format_diff(source, proposed)
         diff_hash = hashlib.sha256(diff_text.encode("utf-8")).hexdigest()
@@ -327,7 +357,9 @@ class PolicyChangeService:
             if row is None:
                 raise PolicyChangeError("policy draft not found")
             if row["diff_hash"] != diff_hash:
-                raise PolicyChangeError("review acknowledgement does not match the exact diff")
+                raise PolicyChangeError(
+                    "review acknowledgement does not match the exact diff"
+                )
             if row["state"] == "draft":
                 connection.execute(
                     "UPDATE policy_change_drafts SET state='reviewed', reviewed_at=? WHERE draft_id=? AND state='draft'",
@@ -371,7 +403,9 @@ class PolicyChangeService:
             source_now = load_registry(self._source_dir).get(policy_id)
             current_bytes = source_path.read_bytes()
         except (OSError, ValueError) as error:
-            raise PolicyChangeError("policy source is unavailable or invalid") from error
+            raise PolicyChangeError(
+                "policy source is unavailable or invalid"
+            ) from error
         is_base_source = (
             source_now is not None
             and source_now.get("version") == row["base_version"]
@@ -384,7 +418,9 @@ class PolicyChangeService:
         )
         if is_base_source:
             if current_bytes != base_source_bytes:
-                raise PolicyChangeError("policy source formatting changed; refresh and review again")
+                raise PolicyChangeError(
+                    "policy source formatting changed; refresh and review again"
+                )
             self._atomic_write(source_path, proposal_bytes)
         elif not is_already_staged:
             raise PolicyChangeError("draft is stale because the source file changed")
@@ -406,7 +442,9 @@ class PolicyChangeService:
                     or active.get("version") != row["new_version"]
                     or active.get("content_hash") != row["new_hash"]
                 ):
-                    raise PolicyChangeError("catalog did not activate the reviewed policy version")
+                    raise PolicyChangeError(
+                        "catalog did not activate the reviewed policy version"
+                    )
                 verification = self._index.verify_snapshot(
                     policy_id,
                     row["new_version"],
@@ -414,7 +452,9 @@ class PolicyChangeService:
                     connection=connection,
                 )
                 if not verification["verified"]:
-                    raise PolicyChangeError("catalog and searchable index do not match the reviewed source")
+                    raise PolicyChangeError(
+                        "catalog and searchable index do not match the reviewed source"
+                    )
                 report.update(
                     {
                         "run_id": run_id,
@@ -428,7 +468,9 @@ class PolicyChangeService:
                         "manifest_hash": manifest_hash,
                         "started_at": started_at,
                         "completed_at": occurred_at,
-                        "changed_fields": json.loads(row["changed_fields_json"])["fields"],
+                        "changed_fields": json.loads(row["changed_fields_json"])[
+                            "fields"
+                        ],
                         "diff": row["diff_text"],
                         "counts": {
                             "added": sync_result.added,
@@ -554,11 +596,15 @@ class PolicyChangeService:
                 self._ingestion.chunks_for_record(record),
             )
             source = sources.get(policy_id)
-            source_state = "missing" if source is None else (
-                "aligned"
-                if source.get("version") == record["version"]
-                and source.get("content_hash") == record["content_hash"]
-                else "changed_on_disk"
+            source_state = (
+                "missing"
+                if source is None
+                else (
+                    "aligned"
+                    if source.get("version") == record["version"]
+                    and source.get("content_hash") == record["content_hash"]
+                    else "changed_on_disk"
+                )
             )
             source_diff = (
                 self._format_diff(record, source)

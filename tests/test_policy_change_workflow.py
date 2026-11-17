@@ -11,7 +11,9 @@ from app.policy_change_service import PolicyChangeError, PolicyChangeService
 from app.policy_ingestion import PolicyIngestionService
 
 
-def write_policy(directory: Path, policy_id: str, version: str, excerpts: list[str]) -> None:
+def write_policy(
+    directory: Path, policy_id: str, version: str, excerpts: list[str]
+) -> None:
     record = {
         "id": policy_id,
         "department_id": "billing",
@@ -35,8 +37,12 @@ def write_policy(directory: Path, policy_id: str, version: str, excerpts: list[s
 def make_service(tmp_path: Path):
     source_dir = tmp_path / "policies"
     source_dir.mkdir()
-    write_policy(source_dir, "billing-refunds", "1.0", ["legacyclaim requires an order receipt."])
-    write_policy(source_dir, "billing-fees", "1.0", ["Fee disputes require a billing review."])
+    write_policy(
+        source_dir, "billing-refunds", "1.0", ["legacyclaim requires an order receipt."]
+    )
+    write_policy(
+        source_dir, "billing-fees", "1.0", ["Fee disputes require a billing review."]
+    )
     database = tmp_path / "refundflow.sqlite3"
     catalog = PolicyCatalog(database)
     index = SQLitePolicyIndex(database)
@@ -53,7 +59,9 @@ def make_service(tmp_path: Path):
 
 def make_draft(service: PolicyChangeService) -> dict:
     policy = next(
-        item for item in service.list_policies() if item["policy_id"] == "billing-refunds"
+        item
+        for item in service.list_policies()
+        if item["policy_id"] == "billing-refunds"
     )
     return service.create_draft(
         policy_id="billing-refunds",
@@ -63,7 +71,7 @@ def make_draft(service: PolicyChangeService) -> dict:
         title="Billing Refund Eligibility — revised",
         effective_from="2026-06-02",
         effective_to=None,
-        excerpts=["Refund claims require an order receipt and a payment reference."] ,
+        excerpts=["Refund claims require an order receipt and a payment reference."],
     )
 
 
@@ -76,14 +84,25 @@ def test_draft_shows_exact_content_diff_without_changing_active_rag(tmp_path):
     assert draft["base_version"] == "1.0"
     assert draft["new_version"] == "2.0"
     assert "-legacyclaim requires an order receipt." in draft["diff"]
-    assert "+Refund claims require an order receipt and a payment reference." in draft["diff"]
+    assert (
+        "+Refund claims require an order receipt and a payment reference."
+        in draft["diff"]
+    )
     assert "title" in draft["changed_fields"]
     assert "excerpts" in draft["changed_fields"]
     assert catalog.current("billing-refunds")["version"] == "1.0"
-    assert [item.text for item in index.search("receipt", department_id="billing", policy_id="billing-refunds")] == [
-        "legacyclaim requires an order receipt."
-    ]
-    assert index.search("payment reference", department_id="billing", policy_id="billing-refunds") == []
+    assert [
+        item.text
+        for item in index.search(
+            "receipt", department_id="billing", policy_id="billing-refunds"
+        )
+    ] == ["legacyclaim requires an order receipt."]
+    assert (
+        index.search(
+            "payment reference", department_id="billing", policy_id="billing-refunds"
+        )
+        == []
+    )
 
 
 def test_publication_requires_exact_diff_review_and_is_idempotent(tmp_path):
@@ -114,8 +133,15 @@ def test_publication_requires_exact_diff_review_and_is_idempotent(tmp_path):
     }
     assert catalog.current("billing-refunds")["version"] == "2.0"
     assert catalog.version("billing-refunds", "1.0")["status"] == "superseded"
-    assert [item.text for item in index.search("legacyclaim", department_id="billing", policy_id="billing-refunds")] == []
-    evidence = index.search("payment reference", department_id="billing", policy_id="billing-refunds")
+    assert [
+        item.text
+        for item in index.search(
+            "legacyclaim", department_id="billing", policy_id="billing-refunds"
+        )
+    ] == []
+    evidence = index.search(
+        "payment reference", department_id="billing", policy_id="billing-refunds"
+    )
     assert len(evidence) == 1
     assert evidence[0].version == "2.0"
     assert service.list_policies()[0]["index_reflected"] is True
@@ -125,7 +151,12 @@ def test_publication_requires_exact_diff_review_and_is_idempotent(tmp_path):
 def test_stale_draft_is_rejected_after_source_and_catalog_move(tmp_path):
     source_dir, _, catalog, index, ingestion, service = make_service(tmp_path)
     draft = make_draft(service)
-    write_policy(source_dir, "billing-refunds", "1.5", ["Refund claims require manager approval."])
+    write_policy(
+        source_dir,
+        "billing-refunds",
+        "1.5",
+        ["Refund claims require manager approval."],
+    )
     ingestion.sync(occurred_at="2026-06-02T00:00:00Z")
     service.review_draft(draft["draft_id"], diff_hash=draft["diff_hash"])
 
@@ -133,9 +164,12 @@ def test_stale_draft_is_rejected_after_source_and_catalog_move(tmp_path):
         service.publish_draft(draft["draft_id"])
 
     assert catalog.current("billing-refunds")["version"] == "1.5"
-    assert [item.text for item in index.search("manager approval", department_id="billing", policy_id="billing-refunds")] == [
-        "Refund claims require manager approval."
-    ]
+    assert [
+        item.text
+        for item in index.search(
+            "manager approval", department_id="billing", policy_id="billing-refunds"
+        )
+    ] == ["Refund claims require manager approval."]
 
 
 def test_failed_publication_restores_source_and_keeps_prior_rag_snapshot(tmp_path):
@@ -150,14 +184,24 @@ def test_failed_publication_restores_source_and_keeps_prior_rag_snapshot(tmp_pat
             BEGIN SELECT RAISE(ABORT, 'injected publish failure'); END"""
         )
 
-    with pytest.raises(PolicyChangeError, match="prior source and active RAG snapshot were restored"):
+    with pytest.raises(
+        PolicyChangeError, match="prior source and active RAG snapshot were restored"
+    ):
         service.publish_draft(draft["draft_id"])
 
     assert (source_dir / "billing-refunds.json").read_bytes() == original_source
     assert catalog.current("billing-refunds")["version"] == "1.0"
-    assert [item.text for item in index.search("receipt", department_id="billing", policy_id="billing-refunds")] == [
-        "legacyclaim requires an order receipt."
-    ]
-    assert index.search("payment reference", department_id="billing", policy_id="billing-refunds") == []
+    assert [
+        item.text
+        for item in index.search(
+            "receipt", department_id="billing", policy_id="billing-refunds"
+        )
+    ] == ["legacyclaim requires an order receipt."]
+    assert (
+        index.search(
+            "payment reference", department_id="billing", policy_id="billing-refunds"
+        )
+        == []
+    )
     assert service.history()[0]["status"] == "failed"
     assert service.history()[0]["source_restored"] is True

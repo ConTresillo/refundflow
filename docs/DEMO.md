@@ -26,8 +26,8 @@ The lab is a separate, explicitly enabled development feature. It modifies only 
 ```bat
 set REFUNDFLOW_ENV=development
 set REFUNDFLOW_POLICY_LAB=1
-set REFUNDFLOW_DATA_DIR=E:\\RefundFlowData
-.venv\\Scripts\\python.exe -m uvicorn app.web:app --host 127.0.0.1 --port 8000 --no-proxy-headers
+set REFUNDFLOW_DATA_DIR=E:/RefundFlowData
+.venv\Scripts\python.exe -m uvicorn app.web:app --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
 Use an appropriate non-C: data path for `REFUNDFLOW_DATA_DIR`; omit it to use the repository-local `var` directory. Open <http://127.0.0.1:8000>, choose a seeded identity, then select **Open the local Policy Change Lab** or visit `/policies`. Choose a policy and propose a new version. Creating a draft does not change the current version. Inspect the diff, acknowledge that exact diff, then publish. The result page reports the catalog/index counts and confirms that the active SQLite chunks and FTS rows match the reviewed version. Search terms from the new clause to verify citations and evidence.

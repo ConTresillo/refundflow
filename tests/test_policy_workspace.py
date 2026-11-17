@@ -15,11 +15,18 @@ def test_local_workspace_seeds_once_and_does_not_auto_publish_disk_edits(tmp_pat
     assert all(item["index_reflected"] for item in initial)
     target = data_dir / "policies" / "billing-refunds.json"
     original = json.loads(target.read_text(encoding="utf-8"))
-    edited = {**original, "excerpts": [*original["excerpts"], "Unreviewed manual edit."]}
+    edited = {
+        **original,
+        "excerpts": [*original["excerpts"], "Unreviewed manual edit."],
+    }
     target.write_text(json.dumps(edited), encoding="utf-8")
 
     reopened = create_local_policy_service(data_dir, seed_dir=seed_dir)
-    policy = next(item for item in reopened.list_policies() if item["policy_id"] == "billing-refunds")
+    policy = next(
+        item
+        for item in reopened.list_policies()
+        if item["policy_id"] == "billing-refunds"
+    )
 
     assert policy["version"] == original["version"]
     assert policy["source_state"] == "changed_on_disk"
