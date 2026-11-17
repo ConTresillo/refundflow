@@ -63,7 +63,7 @@ Inventory existing repo capabilities, official docs, maintained libraries and te
 
 ## Enterprise delivery phases (supersede the earlier ordering below)
 
-1. **Visible app shell and trusted identity:** local UI/API, OIDC-compatible identity boundary, explicitly labeled dev identity provider, health/readiness and a smoke test.
+1. **Visible app shell and trusted identity:** local UI/API, replaceable `IdentityPort`, explicitly labeled development identity adapter, health/readiness and security smoke tests. Delivered locally: the loopback-only simulator is runnable; it is not real OIDC authentication, and a provider/issuer/client remains unconfigured.
 2. **IAM and document model:** tenants, users, groups, memberships, roles, permissions, document categories/scopes/grants, deny-by-default checks and audit.
 3. **Permission-scoped RAG:** ACL filters before top-k and before model context, citations rechecked at return, cross-tenant non-interference and revocation tests. Keep Chroma gated.
 4. **Async query service:** durable queue/worker, `202` plus run ID, progress/events, retry/idempotence/cancellation/recovery, async LangGraph and durable checkpointing.
@@ -75,7 +75,7 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Phase 1 — visible app shell and trusted identity.** Inspect current dependencies/runtime and compare maintained OIDC/dev-identity plus UI/API options. Then build the smallest runnable identity-aware page/API and smoke/security tests. Do not accept arbitrary user/role headers as authentication. If a required runtime is absent, report the exact blocker and local alternative. The Decision 0020 generation-manifest schema/status/recovery work remains backlog and can resume when it directly supports safe document ingestion; it is no longer the next product milestone.
+**Phase 2 — IAM and document model** is next. The Phase 1 local slice is runnable via [the demo guide](DEMO.md): server-defined tenant/group identities, an `IdentityPort`, loopback-only server-side demo sessions, CSRF-protected login/logout, and health/readiness. This is not OIDC or authorization; the production/default mode remains disabled until an identity provider is configured. Do not accept arbitrary identity/role headers. Decision 0020 generation-manifest work remains backlog unless it directly supports safe document ingestion.
 
 Historical report from the prior design run: 34 tests passed (13 existing LangSmith deprecation warnings), Ruff on app/tests passed, compile check and `pip check` passed, and `git diff --check` was clean. Five pre-existing repo-wide Ruff issues in `conftest.py` and `scripts/make_policies.py` were not modified. These are not verification results for the current dev commit; rerun checks before claiming current status.
 

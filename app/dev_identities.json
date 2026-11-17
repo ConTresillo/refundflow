@@ -1,0 +1,32 @@
+[
+  {
+    "subject_id": "alice.chen",
+    "display_name": "Alice Chen",
+    "tenant_id": "northstar-retail",
+    "tenant_name": "Northstar Retail",
+    "groups": [
+      {"id": "support-agents", "name": "Support Agents"}
+    ],
+    "roles": ["support-agent"]
+  },
+  {
+    "subject_id": "bob.patel",
+    "display_name": "Bob Patel",
+    "tenant_id": "northstar-retail",
+    "tenant_name": "Northstar Retail",
+    "groups": [
+      {"id": "billing-analysts", "name": "Billing Analysts"}
+    ],
+    "roles": ["billing-analyst"]
+  },
+  {
+    "subject_id": "dana.ross",
+    "display_name": "Dana Ross",
+    "tenant_id": "contoso-logistics",
+    "tenant_name": "Contoso Logistics",
+    "groups": [
+      {"id": "risk-reviewers", "name": "Risk Reviewers"}
+    ],
+    "roles": ["risk-reviewer"]
+  }
+]
