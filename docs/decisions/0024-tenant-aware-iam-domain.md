@@ -1,0 +1,12 @@
+# Decision 0024 — Initial tenant-aware IAM domain and fail-closed check
+
+- Date/run: 2026-11-17; scheduled local slice on `dev`.
+- Goal: begin Phase 2 with typed tenant membership, role/permission, document category/scope/grant models and a deny-by-default authorization port candidate.
+- Context: development identities provide fixture tenant/group/role labels only; no IAM persistence, authorization, or permission-filtered retrieval exists. The enterprise contract requires category, scope and permission to remain distinct and tenant isolation to precede access.
+- Decision: add immutable Pydantic domain records and a small local `AuthorizationEngine` that only authorizes explicitly granted `document.read` within a current tenant membership and exact requested resource scope/category. A role grant also requires that role to carry the permission. Unknown action, tenant, scope, category, membership, or grant denies. This is a tested local first slice, not a selected mature authorization engine or production authorization adapter.
+- Alternatives/dependency: do not add Casbin/OpenFGA prematurely. Neither package is installed. Selection remains an explicit ADR task comparing license, maintenance, operational footprint, group/document relation fit, revocation semantics and local testing before integration. No dependency changes.
+- Files: `app/iam.py`, `tests/test_iam.py`, `docs/ROADMAP.md`, this decision.
+- Tests: RED collection initially failed because `app.iam` did not exist. Focused `.venv/Scripts/python.exe -m pytest tests/test_iam.py -q` — 4 passed. Full `.venv/Scripts/python.exe -m pytest -q` — 63 passed, 13 existing LangSmith deprecation warnings. Ruff targeted checks passed; Python compileall passed. No web flow uses this module yet; no live server smoke was applicable to this domain-only slice.
+- Security/limitations: verifies grant/tenant/scope/category decisions in-process; no trusted OIDC integration, database-backed mutable memberships, groups table, audit event, revocation persistence, authorization library, or RAG integration. Do not treat it as sufficient for production. No secrets, external services or customer data.
+- Commit/remote: pending verified commit and `origin/dev` readback.
+- Blocker/next: proceed with persistence-backed tenant/user/group/membership/role/permission/document/grant repository and append-only authorization audit, after recording mature engine selection; then wire current-membership authorization before retrieval. Do not use request-body identity as authority.
