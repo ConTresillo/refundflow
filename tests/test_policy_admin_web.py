@@ -306,6 +306,34 @@ def test_policy_write_api_requires_csrf_and_rejects_cross_origin(tmp_path):
     assert wrong_origin.status_code == 403
     assert client.get("/api/policy-drafts").json() == []
 
+def test_development_exposes_evidence_without_enabling_policy_lab(tmp_path, monkeypatch):
+    import re
+
+    from app.iam_store import SQLiteIAMStore
+    from app.web_runtime import create_app as create_runtime_app
+
+    monkeypatch.delenv("REFUNDFLOW_POLICY_LAB", raising=False)
+    monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
+    client = TestClient(create_runtime_app(environment="development"), client=("127.0.0.1", 8000), follow_redirects=False)
+    homepage = client.get("/")
+    csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', homepage.text).group(1)
+    client.post("/dev/login", json={"subject_id": "bob.patel"}, headers={"x-csrf-token": csrf, "origin": "http://testserver"})
+
+    dashboard = client.get("/")
+    assert "authorization and document access are not implemented yet" not in dashboard.text.lower()
+    assert client.get("/evidence").status_code == 200
+    params = {"department_id": "billing", "query": "refund receipt", "as_of": "2026-11-22"}
+    search = client.get("/api/policy-search", params=params)
+    assert search.status_code == 200 and search.json()
+    assert client.get("/policies").status_code == 200
+    assert "Policy Change Lab" in client.get("/policies").text
+
+    iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    document = next(item for item in iam.authorization_document_snapshot()[1] if item.id == "billing-refunds")
+    iam.put_document(document.model_copy(update={"grants": ()}), occurred_at="test-revoke")
+    assert client.get("/api/policy-search", params=params).json() == []
+
+
 
 def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tmp_path, monkeypatch):
     import re
@@ -317,7 +345,9 @@ def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tm
     monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
     client = TestClient(create_runtime_app(environment="development"), client=("127.0.0.1", 8000), follow_redirects=False)
     homepage = client.get("/")
-    csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', homepage.text).group(1)
+    csrf_match = re.search(r'<meta name="csrf-token" content="([^"]+)"', homepage.text)
+    assert csrf_match is not None
+    csrf = csrf_match.group(1)
     login = client.post("/dev/login", json={"subject_id": "bob.patel"}, headers={"x-csrf-token": csrf, "origin": "http://testserver"})
     assert login.status_code == 303, login.text
     params = {"department_id": "billing", "query": "refund receipt", "as_of": "2026-11-22"}

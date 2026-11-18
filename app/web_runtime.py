@@ -45,11 +45,12 @@ def create_app(
         raise ValueError("REFUNDFLOW_ENV must be 'development' or 'production'")
     dev_enabled = runtime_environment == "development"
     policy_lab_enabled = os.getenv("REFUNDFLOW_POLICY_LAB") == "1"
+    evidence_explorer_enabled = dev_enabled
     if policy_service is not None and not dev_enabled:
         raise ValueError("the policy lab is available only in development mode")
     if policy_lab_enabled and not dev_enabled:
         raise ValueError("REFUNDFLOW_POLICY_LAB requires REFUNDFLOW_ENV=development")
-    if policy_service is None and policy_lab_enabled:
+    if policy_service is None and (policy_lab_enabled or evidence_explorer_enabled):
         from app.policy_workspace import (
             create_local_policy_service,
             seed_development_evidence_grants,
@@ -213,8 +214,13 @@ def create_app(
                     if policy_service is not None
                     else ""
                 )
-                + "<p>These fixture roles are informational only; authorization and document access are not implemented yet.</p>"
-                '<button type="button" id="logout">Sign out</button>'
+                + (
+                    "<p>Evidence search checks your current document grants before retrieval. "
+                    "Demo role labels above are informational only; policy administration permissions are separate.</p>"
+                    if policy_service is not None
+                    else "<p>Authorization and document access are not available in this mode.</p>"
+                )
+                + '<button type="button" id="logout">Sign out</button>'
                 '<p id="login-status" aria-live="polite"></p>'
                 "<script>"
                 "const csrf=document.querySelector('meta[name=csrf-token]').content;"
