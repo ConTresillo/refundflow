@@ -286,15 +286,22 @@ class SQLitePolicyIndex:
         department_id: str,
         policy_id: str | None = None,
         version: str | None = None,
+        allowed_policy_ids: set[str] | None = None,
         top_k: int = 5,
     ) -> list[IndexedChunk]:
-        """Search with FTS5 OR semantics, optionally scoped to policy/version."""
-        terms = [word.strip(".,;:!?()[]{}\"'") for word in query.split()]
+        """Search FTS with authorization, department and version filters before rank/limit."""
+        terms = [word.strip(".,;:!?()[]{}\\\"'") for word in query.split()]
         terms = list(dict.fromkeys(term for term in terms if term))
-        if not terms or top_k <= 0:
+        if not terms or top_k <= 0 or allowed_policy_ids == set():
             return []
         match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
-        params = (match, department_id, policy_id, policy_id, version, version, top_k)
+        policy_filter = ""
+        params: list[object] = [match, department_id, policy_id, policy_id, version, version]
+        if allowed_policy_ids is not None:
+            allowed = sorted(allowed_policy_ids)
+            policy_filter = f" AND c.policy_id IN ({','.join('?' for _ in allowed)})"
+            params.extend(allowed)
+        params.append(top_k)
         with closing(self._connect()) as db:
             try:
                 rows = db.execute(
@@ -303,8 +310,8 @@ class SQLitePolicyIndex:
                     FROM policy_chunks_fts f JOIN policy_chunks c ON c.chunk_id=f.chunk_id
                     WHERE policy_chunks_fts MATCH ? AND c.department_id=? AND c.active=1
                         AND (? IS NULL OR c.policy_id=?)
-                        AND (? IS NULL OR c.version=?)
-                    ORDER BY rank, c.chunk_id LIMIT ?""",
+                        AND (? IS NULL OR c.version=?)""" + policy_filter +
+                    " ORDER BY rank, c.chunk_id LIMIT ?",
                     params,
                 ).fetchall()
             except sqlite3.OperationalError as error:

@@ -72,6 +72,44 @@ def make_client(tmp_path: Path):
     return client, headers
 
 
+def test_policy_search_filters_acl_before_top_k_ranking_and_rechecks_revocation(tmp_path):
+    from app.iam import Document, DocumentGrant
+    from app.iam_store import SQLiteIAMStore
+
+    client, _ = make_client(tmp_path)
+    source_dir = tmp_path / "policies"
+    write_policy(source_dir, "billing-private", "1.0", "common")
+    index = SQLitePolicyIndex(tmp_path / "refundflow.sqlite3")
+    index.ingest([
+        {"policy_id": "billing-refunds", "version": "1.0", "department_id": "billing", "section_id": "rules", "text": "common"},
+        {"policy_id": "billing-private", "version": "1.0", "department_id": "billing", "section_id": "rules", "text": "common common common common common"},
+    ])
+    iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    # Seed the allowed grant before querying; the rival is explicitly denied.
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="alice.chen", permission="document.read"),)))
+    iam.put_document(Document(id="billing-private", tenant_id="northstar-retail", owner_user_id="bob.patel", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"),)))
+    service = client.app.state.policy_service
+    original_retrieve = service._retriever.retrieve
+
+    def revoke_during_retrieval(*args, **kwargs):
+        result = original_retrieve(*args, **kwargs)
+        iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=()))
+        return result
+
+    service._retriever.retrieve = revoke_during_retrieval
+    params = {"department_id": "billing", "query": "common", "as_of": "2026-06-02", "top_k": 1}
+    raced = client.get("/api/policy-search", params=params)
+    assert raced.status_code == 200
+    assert raced.json() == []
+    service._retriever.retrieve = original_retrieve
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="alice.chen", permission="document.read"),)))
+    results = client.get("/api/policy-search", params=params).json()
+    assert [item["policy_id"] for item in results] == ["billing-refunds"]
+    assert all("common common common" not in item.get("text", "") for item in results)
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=()))
+    assert client.get("/api/policy-search", params=params).json() == []
+
+
 def test_policy_search_denies_until_document_grant_is_explicitly_seeded(tmp_path):
     from app.iam import Document, DocumentGrant
     from app.iam_store import SQLiteIAMStore

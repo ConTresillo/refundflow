@@ -250,16 +250,28 @@ def register_policy_routes(
     @app.get("/api/policy-search")
     def policy_search(
         request: Request,
-        policy_id: Annotated[str, Query(min_length=1, max_length=64)],
         query: Annotated[str, Query(min_length=1, max_length=300)],
         as_of: Annotated[str, Query(min_length=10, max_length=10)],
+        department_id: str | None = None,
+        policy_id: str | None = None,
         top_k: Annotated[int, Query(ge=1, le=10)] = 5,
     ) -> JSONResponse:
         identity = current_identity(request)
+        if department_id is None and policy_id is None:
+            raise HTTPException(status_code=422, detail="department_id is required for cross-policy search")
+        if department_id is None:
+            assert policy_id is not None
+            service_for_lookup = request.scope["app"].state.policy_service
+            record = service_for_lookup._catalog.current(policy_id)
+            if record is None:
+                raise HTTPException(status_code=404, detail="unknown policy")
+            department_id = record["department_id"]
+        if department_id is None:
+            raise HTTPException(status_code=422, detail="department_id is required for cross-policy search")
         try:
             results = service.search_for_identity(
                 identity.subject_id, identity.tenant_id,
-                query, policy_id=policy_id, as_of=as_of, top_k=top_k,
+                query, department_id=department_id, policy_id=policy_id, as_of=as_of, top_k=top_k,
             )
         except PolicyChangeError as error:
             raise service_error(error) from error

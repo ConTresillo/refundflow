@@ -1,0 +1,13 @@
+# Decision 0044 — Repair the authorization-filtered policy search slice
+
+- Date: 2026-11-22. Status: implementation verified locally; pending commit/push.
+- Goal: repair the policy search slice with a genuinely cross-policy authorization filter before FTS top-k and deterministic revocation race denial.
+- Context: the earlier selected-policy test was non-discriminating: its policy_id predicate excluded the competing document before ranking. An optional policy_id alone did not close that gap.
+- Decision: retain old single-policy calls; allow department-wide search only with explicit department_id. Compute eligible IDs from tenant-scoped persisted documents and PyCasbin, constrain FTS SQL by those IDs before ORDER BY rank/LIMIT, and fail closed when the principal/document revisions change during or after retrieval. Keep SQLite FTS5 and no new dependencies.
+- Alternatives: post-filter rank (rejected; poor recall and exposes unauthorized text to retrieval layer), infer ACL from fixture role names (rejected), or allow cross-department IDs (rejected; no tenant-qualified index mapping exists).
+- Files: `app/incremental_index.py`, `app/policy_change_service.py`, `app/retrieval.py`, `app/policy_routes.py`, `tests/test_policy_admin_web.py`, `tests/test_authorized_index_search.py`, `docs/ROADMAP.md`, this record. Pre-existing owner architecture/research artifacts and `.scratch/` remain outside scope.
+- Verification: focused `.venv/Scripts/python.exe -m pytest tests/test_policy_admin_web.py tests/test_authorized_index_search.py -q` — 8 passed. Full `.venv/Scripts/python.exe -m pytest -q` — 93 passed. Ruff, compileall, pip check and diff check passed; 13 existing LangSmith deprecation warnings.
+- Security/limits: route test queries without policy_id, top_k=1, with allowed low-score policy and denied higher-score rival; only allowed citation returns. Deterministic retrieval-hook grant revocation returns no evidence. No unauthorized row body is passed out of SQL. Still incomplete: stress fixture with >20*top_k forbidden rows, tenant ID collisions in shared lexical index, catalog revision race, and policy admin authorization. This is not full P2a completion.
+- Dependency changes: none. No external access, secrets, customer data or public exposure.
+- Commit/remote: not yet committed; remote remains observed at `244e791...` before this work. Only selected implementation paths plus roadmap and this decision may be staged.
+- Next: complete P2a's large-forbidden-row/tenant-collision and catalog-freshness gates, then implement the visible evidence explorer slice; verify exact push SHA/CI.

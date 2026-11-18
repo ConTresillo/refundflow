@@ -634,28 +634,18 @@ class PolicyChangeService:
 
     def search_for_identity(
         self, subject_id: str, tenant_id: str, query: str, *,
-        policy_id: str, as_of: str, top_k: int = 5,
+        department_id: str, policy_id: str | None = None, as_of: str, top_k: int = 5,
     ) -> list[dict[str, Any]]:
-        """Recheck the live principal/document grant before retrieving evidence."""
-        from app.iam import (
-            AccessRequest,
-            CasbinAuthorizationAdapter,
-            Membership,
-            Principal,
-            Role,
-        )
+        """Recheck live document grants before returning scoped evidence."""
+        from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
         from app.iam_store import SQLiteIAMStore
 
-        record = self._catalog.current(policy_id)
-        if record is None:
-            raise PolicyChangeError("unknown policy")
         if tenant_id not in {"northstar-retail", "contoso-logistics"}:
             return []
         store = SQLiteIAMStore(self._database)
-        # The local simulator uses a fixed server-side subject-to-tenant fixture.
-        # Persisted membership is materialized on first query; subsequent requests
-        # always re-read it, so revocation/deletion denies immediately.
         if store.get_principal(subject_id) is None:
+            from app.iam import Membership, Principal
+
             demo_tenants = {"alice.chen": "northstar-retail", "bob.patel": "northstar-retail", "dana.ross": "contoso-logistics"}
             if demo_tenants.get(subject_id) == tenant_id:
                 group_id = "billing-analysts" if subject_id == "bob.patel" else ("risk-reviewers" if subject_id == "dana.ross" else "support-agents")
@@ -666,17 +656,39 @@ class PolicyChangeService:
         if revision != document_revision:
             return []
         principal = next((item for item in principals if item.user_id == subject_id), None)
-        document = next((item for item in documents if item.tenant_id == tenant_id and item.id == policy_id), None)
-        if principal is None or document is None:
+        if principal is None:
             return []
+        tenant_documents = {item.id: item for item in documents if item.tenant_id == tenant_id}
         roles = tuple(Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
                       for role in store.list_roles(tenant_id))
         adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
-        if not adapter.authorize(principal, document, AccessRequest(
-            action="document.read", scope=document.scope, category=document.category
-        )):
+        allowed_policy_ids = {
+            item.id for item in tenant_documents.values()
+            if adapter.authorize(principal, item, AccessRequest(
+                action="document.read", scope=item.scope, category=item.category
+            ))
+        }
+        if policy_id is not None and policy_id not in allowed_policy_ids:
             return []
-        return self.search(query, policy_id=policy_id, as_of=as_of, top_k=top_k)
+        if policy_id is not None:
+            record = self._catalog.current(policy_id)
+            if record is None or record["department_id"] != department_id:
+                return []
+        current_principal_revision, _ = store.authorization_principal_snapshot()
+        current_document_revision, _ = store.authorization_document_snapshot()
+        if current_principal_revision != revision or current_document_revision != document_revision:
+            return []
+        results = self.search(
+            query, department_id=department_id, policy_id=policy_id, as_of=as_of, top_k=top_k,
+            allowed_policy_ids=allowed_policy_ids,
+            authorization_revision=revision, document_revision=document_revision,
+            tenant_id=tenant_id, subject_id=subject_id,
+        )
+        current_principal_revision, _ = store.authorization_principal_snapshot()
+        current_document_revision, _ = store.authorization_document_snapshot()
+        if current_principal_revision != revision or current_document_revision != document_revision:
+            return []
+        return results
 
     def list_drafts(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
@@ -697,22 +709,80 @@ class PolicyChangeService:
         return [json.loads(row["report_json"]) for row in rows]
 
     def search(
-        self, query: str, *, policy_id: str, as_of: str, top_k: int = 5
+        self,
+        query: str,
+        *,
+        department_id: str | None = None,
+        policy_id: str | None = None,
+        as_of: str,
+        top_k: int = 5,
+        allowed_policy_ids: set[str] | None = None,
+        authorization_revision: int | None = None,
+        document_revision: int | None = None,
+        tenant_id: str | None = None,
+        subject_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        policy = self._catalog.current(policy_id)
-        if policy is None:
+        if department_id is None and policy_id is not None:
+            selected = self._catalog.current(policy_id)
+            department_id = selected["department_id"] if selected is not None else None
+        if department_id is None:
+            return []
+        if policy_id is not None and policy_id not in set(allowed_policy_ids or ()):
+            return []
+        policy = self._catalog.current(policy_id) if policy_id is not None else None
+        if policy_id is not None and policy is None:
             raise PolicyChangeError("unknown policy")
+        if policy is not None and policy["department_id"] != department_id:
+            return []
         try:
             date.fromisoformat(as_of)
         except ValueError as error:
             raise PolicyChangeError("as_of must be an ISO calendar date") from error
         evidence = self._retriever.retrieve(
             query,
-            departments={policy["department_id"]},
-            policy_ids={policy_id},
+            departments={department_id},
+            policy_ids={policy_id} if policy_id is not None else None,
             as_of=as_of,
+            allowed_policy_ids=allowed_policy_ids,
             top_k=min(max(int(top_k), 1), 10),
         )
+        if authorization_revision is not None or document_revision is not None:
+            from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
+            from app.iam_store import SQLiteIAMStore
+
+            if tenant_id is None or subject_id is None:
+                return []
+            store = SQLiteIAMStore(self._database)
+            current_principal_revision, principals = store.authorization_principal_snapshot()
+            current_document_revision, documents = store.authorization_document_snapshot()
+            if (
+                authorization_revision != current_principal_revision
+                or document_revision != current_document_revision
+            ):
+                return []
+            principal = next((item for item in principals if item.user_id == subject_id), None)
+            if principal is None:
+                return []
+            tenant_documents = {
+                item.id: item for item in documents if item.tenant_id == tenant_id
+            }
+            roles = tuple(
+                Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
+                for role in store.list_roles(tenant_id)
+            )
+            adapter = CasbinAuthorizationAdapter(
+                roles, principals=principals, documents=documents
+            )
+            currently_allowed = {
+                item.id for item in tenant_documents.values()
+                if adapter.authorize(principal, item, AccessRequest(
+                    action="document.read", scope=item.scope, category=item.category
+                ))
+            }
+            if not set(allowed_policy_ids or ()).issubset(currently_allowed):
+                return []
+            if policy_id is not None and policy_id not in currently_allowed:
+                return []
         return [
             {
                 "policy_id": item.policy_id,

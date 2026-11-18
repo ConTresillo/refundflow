@@ -43,6 +43,7 @@ class SQLiteEvidenceRetriever:
         departments: set[str],
         policy_ids: set[str] | None = None,
         as_of: str,
+        allowed_policy_ids: set[str] | None = None,
         top_k: int = 5,
     ) -> list[PolicyEvidence]:
         """Return only currently catalogued, active, date-eligible FTS passages."""
@@ -53,9 +54,17 @@ class SQLiteEvidenceRetriever:
         except ValueError as error:
             raise ValueError("as_of must be an ISO calendar date") from error
         candidates: list[IndexedChunk] = []
+        authorized_ids = allowed_policy_ids
+        if authorized_ids == set():
+            return []
         for department in sorted(departments):
             candidates.extend(
-                self._index.search(query, department_id=department, top_k=max(top_k, 1) * 20)
+                self._index.search(
+                    query,
+                    department_id=department,
+                    allowed_policy_ids=authorized_ids,
+                    top_k=max(top_k, 1) * 20,
+                )
             )
         evidence: list[PolicyEvidence] = []
         seen: set[str] = set()
