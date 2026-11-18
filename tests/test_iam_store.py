@@ -154,6 +154,21 @@ def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_pa
     assert store.list_principals() == (Principal(user_id="alice", memberships=()),)
 
 
+def test_authorization_revision_advances_only_for_committed_principal_changes(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.db")
+
+    assert store.authorization_revision() == 0
+    store.put_principal(Principal(user_id="alice", memberships=()), occurred_at="t1")
+    assert store.authorization_revision() == 1
+    store.put_principal(Principal(user_id="alice", memberships=()), occurred_at="t2")
+    assert store.authorization_revision() == 2
+    assert store.delete_principal("missing", occurred_at="t3") is False
+    assert store.authorization_revision() == 2
+    assert store.delete_principal("alice", occurred_at="t4") is True
+    assert store.authorization_revision() == 3
+    assert SQLiteIAMStore(tmp_path / "iam.db").authorization_revision() == 3
+
+
 def test_delete_principal_revokes_memberships_and_records_audit(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
     store.put_principal(Principal(user_id="alice", memberships=()))

@@ -60,6 +60,12 @@ class SQLiteIAMStore:
                     occurred_at TEXT NOT NULL,
                     details_json TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS iam_authorization_revision (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                    revision INTEGER NOT NULL
+                );
+                INSERT OR IGNORE INTO iam_authorization_revision(singleton, revision)
+                    VALUES (1, 0);
                 """
             )
 
@@ -71,7 +77,7 @@ class SQLiteIAMStore:
     def put_principal(
         self, principal: Principal, *, occurred_at: str = "local"
     ) -> None:
-        """Atomically replace membership snapshot and record the mutation."""
+        """Atomically replace membership snapshot, advance auth revision, and audit."""
         if not occurred_at.strip():
             raise ValueError("occurred_at must be non-empty")
         memberships = [item.model_dump(mode="json") for item in principal.memberships]
@@ -88,6 +94,9 @@ class SQLiteIAMStore:
                     "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
                     "VALUES (?, ?, ?, ?)",
                     ("principal.updated", principal.user_id, occurred_at, serialized),
+                )
+                connection.execute(
+                    "UPDATE iam_authorization_revision SET revision=revision+1 WHERE singleton=1"
                 )
                 connection.commit()
             except BaseException:
@@ -288,8 +297,16 @@ class SQLiteIAMStore:
         )
         return principal_models
 
+    def authorization_revision(self) -> int:
+        """Return the committed authorization revision."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT revision FROM iam_authorization_revision WHERE singleton=1"
+            ).fetchone()
+        return int(row["revision"])
+
     def delete_principal(self, user_id: str, *, occurred_at: str = "local") -> bool:
-        """Remove a principal to revoke its memberships and audit the change.
+        """Remove a principal, advance authorization revision and audit atomically.
 
         Returns False for an absent principal; no redundant event is recorded.
         The deletion and its audit event share one transaction.
@@ -309,6 +326,9 @@ class SQLiteIAMStore:
                     "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) "
                     "VALUES (?, ?, ?, ?)",
                     ("principal.deleted", user_id, occurred_at, "{}"),
+                )
+                connection.execute(
+                    "UPDATE iam_authorization_revision SET revision=revision+1 WHERE singleton=1"
                 )
                 connection.commit()
                 return True
