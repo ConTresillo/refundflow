@@ -137,6 +137,8 @@ def test_roles_with_missing_permissions_are_not_authorized_snapshot_entries(tmp_
 
 def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_role("northstar", "reviewer")
+    store.put_group("northstar", "billing")
     store.put_principal(
         Principal(
             user_id="alice",
@@ -156,6 +158,7 @@ def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_pa
 
 def test_authorization_principal_snapshot_pairs_revision_and_memberships(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.db")
+    store.put_role("northstar", "reviewer")
     principal = Principal(
         user_id="alice",
         memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
@@ -164,7 +167,7 @@ def test_authorization_principal_snapshot_pairs_revision_and_memberships(tmp_pat
 
     revision, principals = store.authorization_principal_snapshot()
 
-    assert revision == store.authorization_revision() == 1
+    assert revision == store.authorization_revision() == 2
     assert principals == (principal,)
 
 
@@ -185,6 +188,26 @@ def test_authorization_revision_tracks_effective_role_graph_mutations(tmp_path):
     store.assign_role_permission("northstar", "reviewer", "document.read")
     assert store.authorization_revision() == 3
     store.assign_role_permission("northstar", "reviewer", "document.read")
+    assert store.authorization_revision() == 3
+
+
+def test_principal_memberships_require_existing_tenant_role_and_group_refs(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.db")
+    store.put_role("northstar", "reviewer")
+    store.put_group("northstar", "billing")
+    store.put_permission("northstar", "document.read")
+    store.assign_role_permission("northstar", "reviewer", "document.read")
+
+    with pytest.raises(ValueError, match="role does not belong"):
+        store.put_principal(Principal(user_id="bad-role", memberships=(Membership(tenant_id="unknown", role_ids=("missing",)),)))
+    with pytest.raises(ValueError, match="group does not belong"):
+        store.put_principal(Principal(user_id="bad-group", memberships=(Membership(tenant_id="northstar", group_ids=("missing",)),)))
+    with pytest.raises(ValueError, match="tenant has no roles or groups"):
+        store.put_principal(Principal(user_id="bad-tenant", memberships=(Membership(tenant_id="unknown"),)))
+
+    assert store.get_principal("bad-role") is None
+    assert store.get_principal("bad-group") is None
+    assert store.get_principal("bad-tenant") is None
     assert store.authorization_revision() == 3
 
 

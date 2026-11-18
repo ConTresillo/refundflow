@@ -90,6 +90,27 @@ class SQLiteIAMStore:
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
+                for membership in principal.memberships:
+                    tenant_exists = connection.execute(
+                        "SELECT 1 FROM iam_roles WHERE tenant_id=? UNION SELECT 1 FROM iam_groups WHERE tenant_id=? LIMIT 1",
+                        (membership.tenant_id, membership.tenant_id),
+                    ).fetchone()
+                    if tenant_exists is None and not (membership.role_ids or membership.group_ids):
+                        raise ValueError("tenant has no roles or groups")
+                    for role_id in membership.role_ids:
+                        exists = connection.execute(
+                            "SELECT 1 FROM iam_roles WHERE tenant_id=? AND role_id=?",
+                            (membership.tenant_id, role_id),
+                        ).fetchone()
+                        if exists is None:
+                            raise ValueError("role does not belong to tenant")
+                    for group_id in membership.group_ids:
+                        exists = connection.execute(
+                            "SELECT 1 FROM iam_groups WHERE tenant_id=? AND group_id=?",
+                            (membership.tenant_id, group_id),
+                        ).fetchone()
+                        if exists is None:
+                            raise ValueError("group does not belong to tenant")
                 connection.execute(
                     "INSERT INTO iam_principals(user_id, memberships_json) VALUES (?, ?) "
                     "ON CONFLICT(user_id) DO UPDATE SET memberships_json=excluded.memberships_json",
