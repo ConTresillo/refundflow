@@ -1,6 +1,6 @@
 import pytest
 
-from app.iam import Membership, Principal
+from app.iam import Document, DocumentGrant, Membership, Principal
 from app.iam_store import SQLiteIAMStore
 
 
@@ -16,6 +16,45 @@ def test_groups_are_tenant_scoped_idempotent_and_audited(tmp_path):
     events = store.audit_events()
     assert [event["action"] for event in events] == ["group.created", "group.created"]
     assert events[0]["details_json"] == '{"tenant_id": "northstar"}'
+
+
+def test_documents_and_grants_are_persisted_in_revision_snapshot(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    document = Document(
+        id="billing-policy",
+        tenant_id="northstar",
+        owner_user_id="alice",
+        category="billing",
+        scope="department:billing",
+        grants=(DocumentGrant(subject_type="user", subject_id="alice", permission="document.read"),),
+    )
+
+    store.put_document(document, occurred_at="t1")
+    store.put_document(document, occurred_at="t2")
+    revision, documents = store.authorization_document_snapshot()
+
+    assert revision == store.authorization_revision() == 1
+    assert documents == (document,)
+    events = store.audit_events()
+    assert [event["action"] for event in events] == ["document.updated"]
+
+
+def test_document_grant_change_advances_revision_and_replaces_grants(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    original = Document(
+        id="billing-policy", tenant_id="northstar", owner_user_id="alice",
+        category="billing", scope="department:billing",
+        grants=(DocumentGrant(subject_type="user", subject_id="alice", permission="document.read"),),
+    )
+    amended = original.model_copy(update={"grants": ()})
+
+    store.put_document(original)
+    store.put_document(amended)
+    revision, documents = store.authorization_document_snapshot()
+
+    assert revision == 2
+    assert documents == (amended,)
+    assert documents[0].grants == ()
 
 
 def test_group_requires_nonempty_identifiers(tmp_path):

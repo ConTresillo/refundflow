@@ -7,7 +7,7 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-from app.iam import Membership, Principal
+from app.iam import Document, Membership, Principal
 
 
 class SQLiteIAMStore:
@@ -52,6 +52,22 @@ class SQLiteIAMStore:
                         REFERENCES iam_roles(tenant_id, role_id),
                     FOREIGN KEY (tenant_id, permission_id)
                         REFERENCES iam_permissions(tenant_id, permission_id)
+                );
+                CREATE TABLE IF NOT EXISTS iam_documents (
+                    tenant_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    document_json TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, document_id)
+                );
+                CREATE TABLE IF NOT EXISTS iam_document_grants (
+                    tenant_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    subject_type TEXT NOT NULL,
+                    subject_id TEXT NOT NULL,
+                    permission TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, document_id, subject_type, subject_id, permission),
+                    FOREIGN KEY (tenant_id, document_id)
+                        REFERENCES iam_documents(tenant_id, document_id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS iam_audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -303,6 +319,63 @@ class SQLiteIAMStore:
                 (tenant_id, role_id),
             ).fetchall()
         return tuple(row["permission_id"] for row in rows)
+
+    def put_document(self, document: Document, *, occurred_at: str = "local") -> None:
+        """Persist a tenant-scoped document and its explicit grants atomically."""
+        if not occurred_at.strip():
+            raise ValueError("occurred_at must be non-empty")
+        serialized = document.model_dump_json()
+        with closing(self._connect()) as connection:
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = connection.execute(
+                    "SELECT document_json FROM iam_documents WHERE tenant_id=? AND document_id=?",
+                    (document.tenant_id, document.id),
+                ).fetchone()
+                if row is not None and row["document_json"] == serialized:
+                    connection.commit()
+                    return
+                connection.execute(
+                    "INSERT INTO iam_documents(tenant_id, document_id, document_json) VALUES (?, ?, ?) "
+                    "ON CONFLICT(tenant_id, document_id) DO UPDATE SET document_json=excluded.document_json",
+                    (document.tenant_id, document.id, serialized),
+                )
+                connection.execute(
+                    "DELETE FROM iam_document_grants WHERE tenant_id=? AND document_id=?",
+                    (document.tenant_id, document.id),
+                )
+                for grant in document.grants:
+                    connection.execute(
+                        "INSERT INTO iam_document_grants VALUES (?, ?, ?, ?, ?)",
+                        (document.tenant_id, document.id, grant.subject_type, grant.subject_id, grant.permission),
+                    )
+                connection.execute(
+                    "INSERT INTO iam_audit_events(action, subject_id, occurred_at, details_json) VALUES (?, ?, ?, ?)",
+                    ("document.updated", document.id, occurred_at, json.dumps({"tenant_id": document.tenant_id, "grant_count": len(document.grants)}, sort_keys=True)),
+                )
+                self._advance_authorization_revision(connection)
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def authorization_document_snapshot(self) -> tuple[int, tuple[Document, ...]]:
+        """Return documents/grants and revision from one consistent read snapshot."""
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            try:
+                revision = connection.execute(
+                    "SELECT revision FROM iam_authorization_revision WHERE singleton=1"
+                ).fetchone()["revision"]
+                rows = connection.execute(
+                    "SELECT document_json FROM iam_documents ORDER BY tenant_id, document_id"
+                ).fetchall()
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        return int(revision), tuple(Document.model_validate_json(row["document_json"]) for row in rows)
 
     def authorization_snapshot(self) -> tuple[Principal, ...]:
         """Load persisted principals as a refresh input, with no implicit grants.
