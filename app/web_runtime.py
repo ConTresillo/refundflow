@@ -50,7 +50,10 @@ def create_app(
     if policy_lab_enabled and not dev_enabled:
         raise ValueError("REFUNDFLOW_POLICY_LAB requires REFUNDFLOW_ENV=development")
     if policy_service is None and policy_lab_enabled:
-        from app.policy_workspace import create_local_policy_service
+        from app.policy_workspace import (
+            create_local_policy_service,
+            seed_development_evidence_grants,
+        )
 
         configured_data_dir = os.getenv("REFUNDFLOW_DATA_DIR")
         data_dir = (
@@ -59,6 +62,7 @@ def create_app(
             else Path(__file__).resolve().parents[1] / "var"
         )
         policy_service = create_local_policy_service(data_dir)
+        seed_development_evidence_grants(policy_service)
 
     app = FastAPI(title="RefundFlow")
     session_store = DevelopmentSessionStore(ttl_seconds=SESSION_TTL_SECONDS)
@@ -204,6 +208,7 @@ def create_app(
                 + html.escape(", ".join(identity.roles))
                 + "</dd></dl>"
                 + (
+                    '<p><a href="/evidence">Open the Evidence Explorer</a></p>'
                     '<p><a href="/policies">Open the local Policy Change Lab</a></p>'
                     if policy_service is not None
                     else ""

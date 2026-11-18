@@ -32,6 +32,16 @@ class DraftReviewRequest(BaseModel):
 
     diff_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
+EVIDENCE_EXPLORER_HTML = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="__CSRF__"><title>RefundFlow evidence explorer</title>
+<style>body{font:16px system-ui,sans-serif;max-width:980px;margin:2rem auto;padding:0 1rem;color:#18202b;background:#f4f7fb}main{background:white;padding:1.5rem 2rem;border-radius:16px}label{display:block;font-weight:600;margin:.8rem 0 .25rem}input,select{box-sizing:border-box;width:100%;padding:.65rem;border:1px solid #9aa9bb;border-radius:6px;font:inherit}button{margin:.8rem 0;padding:.65rem 1rem;border:0;border-radius:7px;background:#2159a6;color:white;cursor:pointer}.notice{background:#fff4d2;padding:.8rem;border-radius:8px}.result{border-top:1px solid #d9e1eb;padding:.8rem 0}#status{min-height:1.5rem}</style></head>
+<body><main><p><a href="/">← Identity demo</a></p><h1>Evidence Explorer</h1><p class="notice">Search uses your signed-in demo identity and current document grants. Results are lexical policy evidence, not generated answers.</p>
+<label for="department">Department</label><input id="department" value="billing" maxlength="64"><label for="query">Question or policy terms</label><input id="query" maxlength="300" placeholder="e.g. receipt refund eligibility"><button id="search">Search authorized evidence</button>
+<p id="status" role="status" aria-live="polite"></p><section id="results" aria-live="polite"></section></main><script>
+const csrf=document.querySelector('meta[name="csrf-token"]').content;const statusNode=document.getElementById('status');const resultsNode=document.getElementById('results');
+document.getElementById('search').addEventListener('click',async()=>{resultsNode.replaceChildren();const query=document.getElementById('query').value.trim();const department=document.getElementById('department').value.trim();if(!query||!department){statusNode.textContent='Enter a query and department.';return;}statusNode.textContent='Searching…';try{const params=new URLSearchParams({department_id:department,query,as_of:new Date().toISOString().slice(0,10),top_k:'5'});const response=await fetch('/api/policy-search?'+params,{credentials:'same-origin',headers:{'X-CSRF-Token':csrf}});const body=await response.json();if(!response.ok)throw new Error(body.detail||'Search failed');if(body.length===0){statusNode.textContent='No authorized evidence found for this query.';return;}statusNode.textContent=`${body.length} authorized evidence item(s).`;for(const item of body){const article=document.createElement('article');article.className='result';const title=document.createElement('h2');title.textContent=item.citation;const meta=document.createElement('p');meta.textContent=`${item.source_name} · version ${item.version} · effective ${item.effective_from}${item.effective_to?' to '+item.effective_to:''} · as of ${params.get('as_of')}`;const text=document.createElement('p');text.textContent=item.text;article.append(title,meta,text);resultsNode.append(article);}}catch(error){statusNode.textContent=error.message||'Search unavailable.';}});
+</script></body></html>"""
+
 
 POLICY_LAB_HTML = r"""<!doctype html>
 <html lang="en">
@@ -160,6 +170,17 @@ def register_policy_routes(
     def service_error(error: PolicyChangeError) -> HTTPException:
         status_code = 404 if "not found" in str(error) else 409
         return HTTPException(status_code=status_code, detail=str(error))
+
+    @app.get("/evidence", response_class=HTMLResponse)
+    def evidence_explorer_page(request: Request) -> HTMLResponse:
+        ensure_identity(request)
+        session = request_session(request)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Sign-in required")
+        content = EVIDENCE_EXPLORER_HTML.replace(
+            "__CSRF__", html.escape(session.csrf_token, quote=True)
+        )
+        return HTMLResponse(content, headers={"Cache-Control": "no-store"})
 
     @app.get("/policies", response_class=HTMLResponse)
     def policy_lab_page(request: Request) -> HTMLResponse:

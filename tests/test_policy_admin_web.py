@@ -32,7 +32,7 @@ def write_policy(directory: Path, policy_id: str, version: str, text: str) -> No
     )
 
 
-def make_client(tmp_path: Path):
+def make_client(tmp_path: Path, subject_id: str = "alice.chen"):
     source_dir = tmp_path / "policies"
     source_dir.mkdir()
     write_policy(
@@ -61,7 +61,7 @@ def make_client(tmp_path: Path):
     assert csrf is not None
     login = client.post(
         "/dev/login",
-        json={"subject_id": "alice.chen"},
+        json={"subject_id": subject_id},
         headers={"x-csrf-token": csrf.group(1), "origin": "http://testserver"},
     )
     assert login.status_code == 303
@@ -183,6 +183,29 @@ def test_policy_lab_requires_the_local_demo_identity(tmp_path):
     assert client.get("/api/policies").status_code == 401
 
 
+def test_evidence_explorer_page_is_authenticated_and_has_search_controls(tmp_path):
+    client, _ = make_client(tmp_path)
+    page = client.get("/evidence")
+    assert page.status_code == 200
+    assert "Evidence Explorer" in page.text
+    assert "Search authorized evidence" in page.text
+    assert "department_id" in page.text
+    assert "citation" in page.text
+    assert "credentials:'same-origin'" in page.text
+
+
+def test_evidence_explorer_requires_identity(tmp_path):
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "synthetic fixture")
+    database = tmp_path / "unauth.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    PolicyIngestionService(source_dir, catalog, index).sync(occurred_at="2026-06-01T00:00:00Z")
+    client = TestClient(create_app(environment="development", policy_service=PolicyChangeService(source_dir, catalog, index)), client=("127.0.0.1", 8000))
+    assert client.get("/evidence").status_code == 401
+
+
 def test_policy_change_ui_api_review_publish_and_retrieval_are_end_to_end(tmp_path):
     client, headers = make_client(tmp_path)
 
@@ -282,3 +305,40 @@ def test_policy_write_api_requires_csrf_and_rejects_cross_origin(tmp_path):
     assert no_csrf.status_code == 403
     assert wrong_origin.status_code == 403
     assert client.get("/api/policy-drafts").json() == []
+
+
+def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tmp_path, monkeypatch):
+    import re
+
+    from app.iam_store import SQLiteIAMStore
+    from app.web_runtime import create_app as create_runtime_app
+
+    monkeypatch.setenv("REFUNDFLOW_POLICY_LAB", "1")
+    monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
+    client = TestClient(create_runtime_app(environment="development"), client=("127.0.0.1", 8000), follow_redirects=False)
+    homepage = client.get("/")
+    csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', homepage.text).group(1)
+    login = client.post("/dev/login", json={"subject_id": "bob.patel"}, headers={"x-csrf-token": csrf, "origin": "http://testserver"})
+    assert login.status_code == 303, login.text
+    params = {"department_id": "billing", "query": "refund receipt", "as_of": "2026-11-22"}
+    allowed = client.get("/api/policy-search", params=params)
+    assert allowed.status_code == 200
+    assert allowed.json()
+    assert any(item["text"] for item in allowed.json())
+
+    client.post("/dev/logout", headers={"x-csrf-token": re.search(r'<meta name="csrf-token" content="([^"]+)"', client.get("/").text).group(1), "origin": "http://testserver"})
+    fresh = client.get("/")
+    csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', fresh.text).group(1)
+    client.post("/dev/login", json={"subject_id": "dana.ross"}, headers={"x-csrf-token": csrf, "origin": "http://testserver"})
+    denied = client.get("/api/policy-search", params=params)
+    assert denied.status_code == 200 and denied.json() == []
+
+    iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    documents = [item for item in iam.authorization_document_snapshot()[1] if item.id == "billing-refunds"]
+    assert len(documents) == 1 and documents[0].tenant_id == "northstar-retail"
+    iam.put_document(documents[0].model_copy(update={"grants": ()}), occurred_at="test-revocation")
+    bob = TestClient(create_runtime_app(environment="development"), client=("127.0.0.1", 8000))
+    home = bob.get("/")
+    csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', home.text).group(1)
+    bob.post("/dev/login", json={"subject_id": "bob.patel"}, headers={"x-csrf-token": csrf, "origin": "http://testserver"})
+    assert bob.get("/api/policy-search", params=params).json() == []
