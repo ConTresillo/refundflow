@@ -168,6 +168,26 @@ def test_authorization_principal_snapshot_pairs_revision_and_memberships(tmp_pat
     assert principals == (principal,)
 
 
+def test_authorization_revision_tracks_effective_role_graph_mutations(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.db")
+    assert store.authorization_revision() == 0
+
+    store.put_role("northstar", "reviewer")
+    assert store.authorization_revision() == 1
+    store.put_role("northstar", "reviewer")
+    assert store.authorization_revision() == 1
+
+    store.put_permission("northstar", "document.read")
+    assert store.authorization_revision() == 2
+    store.put_permission("northstar", "document.read")
+    assert store.authorization_revision() == 2
+
+    store.assign_role_permission("northstar", "reviewer", "document.read")
+    assert store.authorization_revision() == 3
+    store.assign_role_permission("northstar", "reviewer", "document.read")
+    assert store.authorization_revision() == 3
+
+
 def test_authorization_revision_advances_only_for_committed_principal_changes(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.db")
 

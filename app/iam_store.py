@@ -74,6 +74,11 @@ class SQLiteIAMStore:
         connection.row_factory = sqlite3.Row
         return connection
 
+    def _advance_authorization_revision(self, connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "UPDATE iam_authorization_revision SET revision=revision+1 WHERE singleton=1"
+        )
+
     def put_principal(
         self, principal: Principal, *, occurred_at: str = "local"
     ) -> None:
@@ -165,6 +170,7 @@ class SQLiteIAMStore:
                             json.dumps({"tenant_id": tenant_id}, sort_keys=True),
                         ),
                     )
+                    self._advance_authorization_revision(connection)
                 connection.commit()
             except BaseException:
                 connection.rollback()
@@ -203,6 +209,7 @@ class SQLiteIAMStore:
                             json.dumps({"tenant_id": tenant_id}, sort_keys=True),
                         ),
                     )
+                    self._advance_authorization_revision(connection)
                 connection.commit()
             except BaseException:
                 connection.rollback()
@@ -259,6 +266,7 @@ class SQLiteIAMStore:
                             json.dumps({"tenant_id": tenant_id, "permission_id": permission_id}, sort_keys=True),
                         ),
                     )
+                    self._advance_authorization_revision(connection)
                 connection.commit()
             except BaseException:
                 connection.rollback()
@@ -354,9 +362,7 @@ class SQLiteIAMStore:
                     "VALUES (?, ?, ?, ?)",
                     ("principal.deleted", user_id, occurred_at, "{}"),
                 )
-                connection.execute(
-                    "UPDATE iam_authorization_revision SET revision=revision+1 WHERE singleton=1"
-                )
+                self._advance_authorization_revision(connection)
                 connection.commit()
                 return True
             except BaseException:
