@@ -659,12 +659,19 @@ class PolicyChangeService:
         if principal is None:
             return []
         tenant_documents = {item.id: item for item in documents if item.tenant_id == tenant_id}
+        tenant_owners: dict[str, set[str]] = {}
+        for item in documents:
+            tenant_owners.setdefault(item.id, set()).add(item.tenant_id)
+        colliding_policy_ids = {
+            document_id for document_id, owners in tenant_owners.items() if len(owners) > 1
+        }
         roles = tuple(Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
                       for role in store.list_roles(tenant_id))
         adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
         allowed_policy_ids = {
             item.id for item in tenant_documents.values()
-            if adapter.authorize(principal, item, AccessRequest(
+            if item.id not in colliding_policy_ids
+            and adapter.authorize(principal, item, AccessRequest(
                 action="document.read", scope=item.scope, category=item.category
             ))
         }

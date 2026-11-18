@@ -136,6 +136,12 @@ def test_policy_search_denies_until_document_grant_is_explicitly_seeded(tmp_path
     )
     assert allowed.status_code == 200
     assert allowed.json()[0]["citation"].startswith("billing-refunds@1.0#")
+    # A document owned only by another tenant cannot grant access to this ID.
+    store.put_document(Document(id="billing-refunds", tenant_id="contoso-logistics", owner_user_id="dana.ross", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="dana.ross", permission="document.read"),)))
+    assert client.get(
+        "/api/policy-search",
+        params={"policy_id": "billing-refunds", "query": "legacyclaim", "as_of": "2026-06-02"},
+    ).json() == []
 
 
 
