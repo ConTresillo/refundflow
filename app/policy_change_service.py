@@ -632,6 +632,52 @@ class PolicyChangeService:
             )
         return results
 
+    def search_for_identity(
+        self, subject_id: str, tenant_id: str, query: str, *,
+        policy_id: str, as_of: str, top_k: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Recheck the live principal/document grant before retrieving evidence."""
+        from app.iam import (
+            AccessRequest,
+            CasbinAuthorizationAdapter,
+            Membership,
+            Principal,
+            Role,
+        )
+        from app.iam_store import SQLiteIAMStore
+
+        record = self._catalog.current(policy_id)
+        if record is None:
+            raise PolicyChangeError("unknown policy")
+        if tenant_id not in {"northstar-retail", "contoso-logistics"}:
+            return []
+        store = SQLiteIAMStore(self._database)
+        # The local simulator uses a fixed server-side subject-to-tenant fixture.
+        # Persisted membership is materialized on first query; subsequent requests
+        # always re-read it, so revocation/deletion denies immediately.
+        if store.get_principal(subject_id) is None:
+            demo_tenants = {"alice.chen": "northstar-retail", "bob.patel": "northstar-retail", "dana.ross": "contoso-logistics"}
+            if demo_tenants.get(subject_id) == tenant_id:
+                group_id = "billing-analysts" if subject_id == "bob.patel" else ("risk-reviewers" if subject_id == "dana.ross" else "support-agents")
+                store.put_group(tenant_id, group_id, occurred_at="demo-session")
+                store.put_principal(Principal(user_id=subject_id, memberships=(Membership(tenant_id=tenant_id, group_ids=(group_id,)),)), occurred_at="demo-session")
+        revision, principals = store.authorization_principal_snapshot()
+        document_revision, documents = store.authorization_document_snapshot()
+        if revision != document_revision:
+            return []
+        principal = next((item for item in principals if item.user_id == subject_id), None)
+        document = next((item for item in documents if item.tenant_id == tenant_id and item.id == policy_id), None)
+        if principal is None or document is None:
+            return []
+        roles = tuple(Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
+                      for role in store.list_roles(tenant_id))
+        adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
+        if not adapter.authorize(principal, document, AccessRequest(
+            action="document.read", scope=document.scope, category=document.category
+        )):
+            return []
+        return self.search(query, policy_id=policy_id, as_of=as_of, top_k=top_k)
+
     def list_drafts(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
             rows = connection.execute(

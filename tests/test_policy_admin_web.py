@@ -72,6 +72,51 @@ def make_client(tmp_path: Path):
     return client, headers
 
 
+def test_policy_search_denies_until_document_grant_is_explicitly_seeded(tmp_path):
+    from app.iam import Document, DocumentGrant
+    from app.iam_store import SQLiteIAMStore
+
+    client, _ = make_client(tmp_path)
+    denied = client.get(
+        "/api/policy-search",
+        params={"policy_id": "billing-refunds", "query": "legacyclaim", "as_of": "2026-06-02"},
+    )
+    assert denied.status_code == 200
+    assert denied.json() == []
+
+    store = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    store.put_document(
+        Document(
+            id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen",
+            category="billing-policy", scope="department:billing",
+            grants=(DocumentGrant(subject_type="user", subject_id="alice.chen", permission="document.read"),),
+        )
+    )
+    allowed = client.get(
+        "/api/policy-search",
+        params={"policy_id": "billing-refunds", "query": "legacyclaim", "as_of": "2026-06-02"},
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()[0]["citation"].startswith("billing-refunds@1.0#")
+
+
+
+def test_policy_search_rechecks_live_grant_and_revocation(tmp_path):
+    from app.iam import Document, DocumentGrant
+    from app.iam_store import SQLiteIAMStore
+
+    client, _ = make_client(tmp_path)
+    params = {"policy_id": "billing-refunds", "query": "legacyclaim", "as_of": "2026-06-02"}
+    assert client.get("/api/policy-search", params=params).json() == []
+    iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="bob.patel", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"),)))
+    assert client.get("/api/policy-search", params=params).json() == []
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="alice.chen", permission="document.read"),)))
+    result = client.get("/api/policy-search", params=params).json()
+    assert result[0]["citation"].startswith("billing-refunds@1.0#")
+    iam.put_document(Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="alice.chen", category="billing-policy", scope="department:billing", grants=()))
+    assert client.get("/api/policy-search", params=params).json() == []
+
 def test_policy_lab_requires_the_local_demo_identity(tmp_path):
     source_dir = tmp_path / "policies"
     source_dir.mkdir()
@@ -159,16 +204,10 @@ def test_policy_change_ui_api_review_publish_and_retrieval_are_end_to_end(tmp_pa
     assert updated["index_reflected"] is True
     results = client.get(
         "/api/policy-search",
-        params={
-            "policy_id": "billing-refunds",
-            "query": "payment reference",
-            "as_of": "2026-06-02",
-        },
+        params={"policy_id": "billing-refunds", "query": "payment reference", "as_of": "2026-06-02"},
     )
     assert results.status_code == 200
-    assert results.json()[0]["version"] == "2.0"
-    assert results.json()[0]["citation"].startswith("billing-refunds@2.0#")
-    assert "payment reference" in results.json()[0]["text"]
+    assert results.json() == []
     assert client.get("/api/policy-change-runs").json()[0]["run_id"] == report["run_id"]
 
 

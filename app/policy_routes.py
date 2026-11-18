@@ -255,10 +255,11 @@ def register_policy_routes(
         as_of: Annotated[str, Query(min_length=10, max_length=10)],
         top_k: Annotated[int, Query(ge=1, le=10)] = 5,
     ) -> JSONResponse:
-        ensure_identity(request)
+        identity = current_identity(request)
         try:
-            results = service.search(
-                query, policy_id=policy_id, as_of=as_of, top_k=top_k
+            results = service.search_for_identity(
+                identity.subject_id, identity.tenant_id,
+                query, policy_id=policy_id, as_of=as_of, top_k=top_k,
             )
         except PolicyChangeError as error:
             raise service_error(error) from error
