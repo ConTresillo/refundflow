@@ -297,6 +297,33 @@ class SQLiteIAMStore:
         )
         return principal_models
 
+    def authorization_principal_snapshot(self) -> tuple[int, tuple[Principal, ...]]:
+        """Return principals and their revision from one consistent read snapshot."""
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN")
+            try:
+                revision = connection.execute(
+                    "SELECT revision FROM iam_authorization_revision WHERE singleton=1"
+                ).fetchone()
+                principals = connection.execute(
+                    "SELECT user_id, memberships_json FROM iam_principals ORDER BY user_id"
+                ).fetchall()
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+        principal_models = tuple(
+            Principal(
+                user_id=row["user_id"],
+                memberships=tuple(
+                    Membership.model_validate(item)
+                    for item in json.loads(row["memberships_json"])
+                ),
+            )
+            for row in principals
+        )
+        return int(revision["revision"]), principal_models
+
     def authorization_revision(self) -> int:
         """Return the committed authorization revision."""
         with closing(self._connect()) as connection:

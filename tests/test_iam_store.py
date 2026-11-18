@@ -154,6 +154,20 @@ def test_store_persists_authoritative_membership_and_refreshes_revocation(tmp_pa
     assert store.list_principals() == (Principal(user_id="alice", memberships=()),)
 
 
+def test_authorization_principal_snapshot_pairs_revision_and_memberships(tmp_path):
+    store = SQLiteIAMStore(tmp_path / "iam.db")
+    principal = Principal(
+        user_id="alice",
+        memberships=(Membership(tenant_id="northstar", role_ids=("reviewer",)),),
+    )
+    store.put_principal(principal, occurred_at="t1")
+
+    revision, principals = store.authorization_principal_snapshot()
+
+    assert revision == store.authorization_revision() == 1
+    assert principals == (principal,)
+
+
 def test_authorization_revision_advances_only_for_committed_principal_changes(tmp_path):
     store = SQLiteIAMStore(tmp_path / "iam.db")
 
