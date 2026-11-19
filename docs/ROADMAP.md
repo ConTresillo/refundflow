@@ -98,6 +98,8 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 **2026-11-19 increment:** P2 permission-filtered evidence search and catalog revalidation have since landed on `dev`; do not reuse the stale warning above for those endpoints. A synthetic PDF parser/SQLite ingestion path is implemented locally in this run; it still lacks an API upload→authorized query end-to-end proof and UI ingestion controls. See P4a record below.
 
+**2026-11-19 UI increment:** The Evidence Explorer is now presented as a responsive policy desk with demo-workspace and signed-in identity context, explicit simulation/evidence-only disclosures, loading/empty/error states, keyboard Enter submission, and results rendered as text nodes. After successful development sign-in, navigation opens the evidence flow directly. Personalization is escaped; search continues to use the existing same-origin CSRF-protected, permission-checked API. This is a local evidence-search UI improvement, not the still-missing ingestion controls or end-to-end upload proof.
+
 ### Historical P0 acceptance detail (completed; retained as evidence)
 
 

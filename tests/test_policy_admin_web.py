@@ -184,14 +184,17 @@ def test_policy_lab_requires_the_local_demo_identity(tmp_path):
 
 
 def test_evidence_explorer_page_is_authenticated_and_has_search_controls(tmp_path):
-    client, _ = make_client(tmp_path)
+    client, _ = make_client(tmp_path, subject_id="dana.ross")
     page = client.get("/evidence")
     assert page.status_code == 200
     assert "Evidence Explorer" in page.text
-    assert "Search authorized evidence" in page.text
+    assert "Find policy evidence" in page.text
     assert "department_id" in page.text
     assert "citation" in page.text
     assert "credentials:'same-origin'" in page.text
+    assert "Evidence-only prototype" in page.text
+    assert "Contoso Logistics" in page.text
+    assert "Dana Ross" in page.text
 
 
 def test_evidence_explorer_requires_identity(tmp_path):

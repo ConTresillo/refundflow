@@ -1,0 +1,11 @@
+# Decision 0049 — personalize the authorized evidence desk
+
+- Date: 2026-11-19. Goal: make the existing permission-checked evidence search a clearer, directly reachable operator flow.
+- Context: the checkout contained a focused UI/test change alongside separate owner architecture research and scratch artifacts. The UI changes replace the plain search page with a responsive policy desk, show the signed-in demo tenant/identity, improve loading/empty/error and keyboard interaction, and navigate successful sign-in to the evidence desk. The search API and its authorization contract are unchanged.
+- Decision: retain the same-origin CSRF-protected `/api/policy-search` request and text-node rendering; HTML-escape identity labels. Clearly disclose simulated identity and evidence-only/no-refund behavior. Do not enable policy administration by default.
+- Alternatives: add a frontend framework/dependency (unnecessary for this bounded page); imply a generated answer (misleading; retrieval remains lexical evidence only); change API/authz during a presentation-only slice (unnecessary).
+- Files: `app/policy_routes.py`, `app/web_runtime.py`, `tests/test_policy_admin_web.py`, `docs/ROADMAP.md`, this record. No dependency changes. The unrelated one-line formatting change in `app/iam.py`, owner architecture documents, `.scratch/`, and `var/` are excluded.
+- Tests: `.venv/Scripts/python.exe -m pytest tests/test_policy_admin_web.py -q` — 13 passed (13 existing LangSmith deprecation warnings). `.venv/Scripts/python.exe -m ruff check app/policy_routes.py app/web_runtime.py app/iam.py tests/test_policy_admin_web.py` — passed. `git diff --check` — passed. Tests exercise authenticated personalization, page controls and existing auth behavior; no fresh real-browser/loopback smoke was run for this UI-only change.
+- Security/artifact review: no external calls or dependencies; no auth boundary weakened. UI uses `textContent` for result strings and escapes the inserted identity values. Demo identity remains a simulator, not OIDC.
+- Commit/remote/CI: pending verification.
+- Remaining: UI does not yet expose PDF ingestion controls and does not prove upload-to-query end-to-end. P4b DOCX/text/Markdown adapters and malformed/partial handling remain the next source-ingestion work; P2 consistency gaps and real OIDC remain open.

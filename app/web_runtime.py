@@ -190,7 +190,7 @@ def create_app(
                 "const csrf=document.querySelector('meta[name=csrf-token]').content;"
                 "document.querySelectorAll('.identity-choice').forEach(button=>button.addEventListener('click',async()=>{"
                 "const response=await fetch('/dev/login',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({subject_id:button.dataset.subjectId})});"
-                "if(response.ok){window.location.assign('/');}else{document.getElementById('login-status').textContent='Sign-in failed ('+response.status+').';}}));"
+                "if(response.ok){window.location.assign('/evidence');}else{document.getElementById('login-status').textContent='Sign-in failed ('+response.status+').';}}));"
                 "</script>"
             )
         else:
