@@ -10,6 +10,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from app.document_parsers import DocumentParseError, ParsedSection, parse_pdf
 from app.incremental_index import ChunkInput, IngestResult, SQLitePolicyIndex
 from app.policies import load_registry
 from app.policy_catalog import PolicyCatalog
@@ -68,6 +69,68 @@ class PolicyIngestionService:
         return chunks
 
     @staticmethod
+    def chunks_for_sections(
+        record: dict[str, Any], sections: list[ParsedSection]
+    ) -> list[ChunkInput]:
+        return [
+            {
+                "policy_id": record["id"],
+                "version": record["version"],
+                "department_id": record["department_id"],
+                "section_id": section.locator,
+                "text": " ".join(section.text.split()),
+            }
+            for section in sections
+        ]
+
+    def replace_pdf(
+        self,
+        path: str | Path,
+        record: dict[str, Any],
+        *,
+        occurred_at: str,
+        tenant_id: str,
+    ) -> PolicySyncResult:
+        """Parse a complete digital PDF then atomically publish its searchable snapshot."""
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(record.get("excerpts"), list) or not record["excerpts"]:
+            raise ValueError("policy record must include provenance excerpts")
+        policy_id = record.get("id")
+        if not isinstance(policy_id, str) or Path(path).stem != policy_id:
+            raise ValueError("PDF filename must match policy ID")
+        try:
+            sections = parse_pdf(path)
+            chunks = self.chunks_for_sections(record, sections)
+        except DocumentParseError as error:
+            self._catalog.record_file_status(
+                tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
+            )
+            raise
+        try:
+            with self._catalog.transaction() as connection:
+                previous = self._catalog.current(policy_id, connection=connection)
+                if previous is not None and record.get("status") != "active":
+                    raise ValueError("policy version must be active")
+                if previous is not None and self._catalog.version(policy_id, record["version"], connection=connection):
+                    raise ValueError("policy version is immutable")
+                if previous is None:
+                    self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                    added, changed = 1, 0
+                else:
+                    self._catalog.supersede(policy_id, previous["version"], occurred_at=occurred_at, connection=connection)
+                    self._catalog.publish(record, occurred_at=occurred_at, connection=connection)
+                    added, changed = 0, 1
+                complete = {(policy_id, version["version"]) for version in self._catalog.versions(policy_id, connection=connection)}
+                index_result = self._index.ingest_in_transaction(connection, chunks, complete_versions=complete)
+                self._catalog.record_sync_outcomes({policy_id: "added" if added else "changed"}, occurred_at=occurred_at, connection=connection)
+            self._catalog.record_file_status(tenant_id, policy_id, status="indexed", message="digital PDF indexed", occurred_at=occurred_at)
+            return PolicySyncResult(added, changed, 0, 0, index_result)
+        except (ValueError, OSError) as error:
+            self._catalog.record_file_status(tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at)
+            raise
+
+    @staticmethod
     def manifest_hash(sources: dict[str, dict[str, Any]]) -> str:
         """Hash sorted policy IDs and canonical content hashes for a source snapshot."""
         material = "\n".join(
@@ -77,9 +140,15 @@ class PolicyIngestionService:
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     def status(self) -> list[dict[str, str]]:
-        """Return current policy provenance and the most recent sync outcome."""
+        """Return current policy provenance and latest sync outcomes, including failed files."""
         records = self._catalog.current_records()
         outcomes = self._catalog.sync_outcomes()
+        for policy_id, outcome in outcomes.items():
+            if outcome.startswith("error:") and policy_id not in records:
+                records[policy_id] = {
+                    "version": "", "department_id": "", "status": "error",
+                    "content_hash": "", "provenance": "",
+                }
         return [
             {
                 "policy_id": policy_id,

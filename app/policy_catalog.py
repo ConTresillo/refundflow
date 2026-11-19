@@ -39,9 +39,17 @@ class PolicyCatalog:
                 CREATE TABLE IF NOT EXISTS ingestion_sync_outcomes (
                     policy_id TEXT PRIMARY KEY,
                     outcome TEXT NOT NULL CHECK (
-                        outcome IN ('added', 'changed', 'unchanged', 'removed')
+                        outcome IN ('added', 'changed', 'unchanged', 'removed') OR outcome LIKE 'error:%'
                     ),
                     recorded_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ingestion_file_status (
+                    tenant_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('indexed', 'error')),
+                    message TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, document_id)
                 );
                 """
             )
@@ -96,6 +104,35 @@ class PolicyCatalog:
             )
         except sqlite3.IntegrityError as error:
             raise ValueError(f"policy version already exists: {record['id']}@{record['version']}") from error
+
+    def record_file_status(
+        self, tenant_id: str, document_id: str, *, status: str,
+        message: str, occurred_at: str,
+    ) -> None:
+        if status not in {"indexed", "error"} or not tenant_id or not document_id:
+            raise ValueError("invalid per-file ingestion status")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    """INSERT INTO ingestion_file_status
+                    (tenant_id, document_id, status, message, occurred_at) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_id, document_id) DO UPDATE SET
+                        status=excluded.status, message=excluded.message, occurred_at=excluded.occurred_at""",
+                    (tenant_id, document_id, status, message[:160], occurred_at),
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def file_status(self, tenant_id: str) -> list[dict[str, str]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT document_id, status, message, occurred_at FROM ingestion_file_status WHERE tenant_id=? ORDER BY document_id",
+                (tenant_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def sync_outcomes(
         self, *, connection: sqlite3.Connection | None = None

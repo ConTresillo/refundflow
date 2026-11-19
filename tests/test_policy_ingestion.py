@@ -55,6 +55,7 @@ def test_status_reports_current_document_provenance_and_sync_outcome(tmp_path):
         tmp_path, ("billing-refunds", "1.0", "refundstatus clause")
     )
     assert service.status() == []
+    assert catalog.file_status("northstar-retail") == []
     service.sync(occurred_at="2026-06-01T00:00:00Z")
 
     assert service.status() == [
