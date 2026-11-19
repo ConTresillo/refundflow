@@ -12,10 +12,17 @@ from app.policy_change_service import PolicyChangeService
 
 def seed_development_evidence_grants(service: PolicyChangeService) -> None:
     """Grant only synthetic billing policy reads to the seeded billing analyst."""
-    from app.iam import Document, DocumentGrant
+    from app.iam import Document, DocumentGrant, Membership, Principal
     from app.iam_store import SQLiteIAMStore
+    from app.identity import load_seeded_identities
 
     store = SQLiteIAMStore(service._database)
+    for seeded in load_seeded_identities():
+        group_id = "billing-analysts" if seeded.subject_id == "bob.patel" else ("risk-reviewers" if seeded.subject_id == "dana.ross" else "support-agents")
+        store.put_group(seeded.tenant_id, group_id, occurred_at="development-demo-fixture")
+        store.put_principal(Principal(user_id=seeded.subject_id, memberships=(Membership(tenant_id=seeded.tenant_id, group_ids=(group_id,)),)), occurred_at="development-demo-fixture")
+
+
     existing = {
         (item.tenant_id, item.id)
         for item in store.authorization_document_snapshot()[1]
@@ -33,7 +40,10 @@ def seed_development_evidence_grants(service: PolicyChangeService) -> None:
                 category=f"{department_id}-policy",
                 scope=f"department:{department_id}",
                 grants=(
-                    (DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"),)
+                    (
+                        DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"),
+                        DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.write"),
+                    )
                     if department_id == "billing" else ()
                 ),
             ),

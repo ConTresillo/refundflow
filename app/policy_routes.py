@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import html
+import re
+import sqlite3
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -86,6 +88,16 @@ POLICY_LAB_HTML = r"""<!doctype html>
     <pre id="publish-report"></pre>
   </section>
   <section>
+    <h2>Replace synthetic policy from PDF</h2>
+
+    <p>Upload a digital-text PDF as a new immutable version. Your persisted document.write grant is checked before reading the file.</p>
+    <label for="pdf-version">New version</label><input id="pdf-version" maxlength="32" value="2.0">
+    <label for="pdf-date">Effective from</label><input id="pdf-date" type="date" value="2026-11-19">
+    <label for="pdf-file">PDF file (maximum 8 MiB)</label><input id="pdf-file" type="file" accept="application/pdf,.pdf">
+    <button id="upload-pdf">Upload and index PDF</button><pre id="ingestion-status" role="status" aria-live="polite"></pre>
+    <button id="refresh-ingestion">Refresh ingestion status</button>
+  </section>
+  <section>
     <h2>Verify retrieval</h2>
     <label for="query">Search this policy's active indexed clauses</label><input id="query" placeholder="Enter terms from a policy clause">
     <button id="search">Search current RAG evidence</button><pre id="search-results"></pre>
@@ -138,6 +150,20 @@ document.getElementById('review').addEventListener('click',async()=>{
 document.getElementById('publish').addEventListener('click',async()=>{
   try{const report=await api(`/api/policy-drafts/${currentDraft.draft_id}/publish`,{method:'POST'});document.getElementById('publish-report').textContent=JSON.stringify(report,null,2);setStatus(report.index_reflected?'Published and verified in the active lexical RAG index.':'Publish completed but index verification failed.');await loadPolicies();await loadHistory();}
   catch(error){setStatus(error.message);}
+});
+document.getElementById('upload-pdf').addEventListener('click',async()=>{
+  const file=document.getElementById('pdf-file').files[0];const status=document.getElementById('ingestion-status');
+  if(!file){status.textContent='Choose a PDF first.';return;}
+  status.textContent='Uploading and indexing…';
+  try{const params=new URLSearchParams({new_version:document.getElementById('pdf-version').value.trim(),effective_from:document.getElementById('pdf-date').value});
+    const response=await fetch(`/api/policies/${encodeURIComponent(policySelect.value)}/pdf?${params}`,{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':csrf,'Content-Type':'application/pdf'},body:file});
+    const body=await response.json();if(!response.ok)throw new Error(body.detail||`HTTP ${response.status}`);
+    status.textContent=JSON.stringify(body,null,2);await loadPolicies();
+  }catch(error){status.textContent=error.message||'Upload failed.';}
+});
+document.getElementById('refresh-ingestion').addEventListener('click',async()=>{
+  try{document.getElementById('ingestion-status').textContent=JSON.stringify(await api('/api/policy-ingestion-status'),null,2);}
+  catch(error){document.getElementById('ingestion-status').textContent=error.message;}
 });
 document.getElementById('search').addEventListener('click',async()=>{
   try{const params=new URLSearchParams({policy_id:policySelect.value,query:document.getElementById('query').value,as_of:new Date().toISOString().slice(0,10)});document.getElementById('search-results').textContent=JSON.stringify(await api(`/api/policy-search?${params}`),null,2);}
@@ -192,6 +218,113 @@ def register_policy_routes(
             "__CSRF__", html.escape(session.csrf_token, quote=True)
         )
         return HTMLResponse(content, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/policies/{policy_id}/pdf")
+    async def upload_policy_pdf(
+        request: Request,
+        policy_id: str,
+        new_version: Annotated[str, Query(min_length=1, max_length=32)],
+        effective_from: Annotated[str, Query(min_length=10, max_length=10)],
+        content_type: Annotated[str | None, Header()] = None,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> JSONResponse:
+        from datetime import date, datetime, timezone
+        from pathlib import Path
+
+        from app.document_parsers import MAX_PDF_BYTES
+        from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
+        from app.iam_store import SQLiteIAMStore
+        from app.policies import compute_content_hash
+        from app.policy_ingestion import PolicyIngestionService
+
+        identity = current_identity(request)
+        require_same_origin(request)
+        require_csrf(request_session(request), x_csrf_token)
+        if content_type is None or content_type.split(";", 1)[0].strip().lower() != "application/pdf":
+            raise HTTPException(status_code=415, detail="application/pdf required")
+        try:
+            content_length = int(request.headers.get("content-length", "-1"))
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="invalid Content-Length") from error
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,31}", new_version):
+            raise HTTPException(status_code=422, detail="invalid policy version")
+        if content_length < 0 or content_length > MAX_PDF_BYTES:
+            raise HTTPException(status_code=413, detail="PDF exceeds the 8 MiB upload limit")
+        store = SQLiteIAMStore(service._database)
+        revision, principals = store.authorization_principal_snapshot()
+        document_revision, documents = store.authorization_document_snapshot()
+        if revision != document_revision:
+            raise HTTPException(status_code=503, detail="authorization snapshot unavailable")
+        principal = next((item for item in principals if item.user_id == identity.subject_id), None)
+        document = next((item for item in documents if item.id == policy_id and item.tenant_id == identity.tenant_id), None)
+        if principal is None or document is None:
+            raise HTTPException(status_code=403, detail="document write denied")
+        roles = tuple(Role(id=role, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
+        adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
+        request_access = AccessRequest(action="document.write", scope=document.scope, category=document.category)
+        if not adapter.authorize(principal, document, request_access):
+            raise HTTPException(status_code=403, detail="document write denied")
+        try:
+            date.fromisoformat(effective_from)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail="effective_from must be ISO date") from error
+        payload = await request.body()
+        if len(payload) != content_length:
+            raise HTTPException(status_code=413, detail="invalid PDF body length")
+        current_revision, _ = store.authorization_principal_snapshot()
+        current_doc_revision, _ = store.authorization_document_snapshot()
+        if current_revision != revision or current_doc_revision != document_revision:
+            raise HTTPException(status_code=403, detail="document write grant changed")
+        current = service._catalog.current(policy_id)
+        if current is None or current["department_id"] != document.scope.removeprefix("department:"):
+            raise HTTPException(status_code=404, detail="policy unavailable")
+        record = dict(current)
+        record.update(version=new_version, status="active", effective_from=effective_from,
+                      source_name="Uploaded synthetic policy PDF", source_type="synthetic_demo",
+                      provenance="Locally uploaded synthetic PDF; bytes are transient during ingestion only.",
+                      license_notes="Synthetic demo content; uploaded locally.", excerpts=["Extracted PDF source"])
+        record["source_url"] = ""
+        record["content_hash"] = compute_content_hash(record)
+        if service._catalog.version(policy_id, new_version) is not None:
+            raise HTTPException(status_code=409, detail="policy version is immutable")
+        stage_dir = Path(service._database).parent / ".staging"
+        stage_dir.mkdir(exist_ok=True)
+        staged_path = None
+        try:
+            staged_path = stage_dir / f"pdf-{policy_id}.pdf"
+            with staged_path.open("xb") as staged:
+                staged.write(payload)
+
+            outcome = PolicyIngestionService(service._source_dir, service._catalog, service._index).replace_pdf(
+                staged_path, record, occurred_at=datetime.now(timezone.utc).isoformat(), tenant_id=identity.tenant_id)
+        except (OSError, ValueError, sqlite3.Error) as error:
+            raise HTTPException(status_code=422, detail="PDF replacement failed; active version preserved") from error
+        finally:
+            if staged_path is not None:
+                staged_path.unlink(missing_ok=True)
+        return JSONResponse({"status": "indexed", "policy_id": policy_id, "version": new_version,
+                             "indexed_chunks": outcome.index.processed,
+                             "reused_chunks": outcome.index.reused,
+                             "retired_chunks": outcome.index.retired}, headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/policy-ingestion-status")
+    def policy_ingestion_status(request: Request) -> JSONResponse:
+        identity = current_identity(request)
+        from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
+        from app.iam_store import SQLiteIAMStore
+        store = SQLiteIAMStore(service._database)
+        revision, principals = store.authorization_principal_snapshot()
+        doc_revision, documents = store.authorization_document_snapshot()
+        if revision != doc_revision:
+            raise HTTPException(status_code=503, detail="authorization snapshot unavailable")
+        principal = next((item for item in principals if item.user_id == identity.subject_id), None)
+        if principal is None:
+            return JSONResponse([])
+        roles = tuple(Role(id=role, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
+        adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
+        writable = {item.id for item in documents if item.tenant_id == identity.tenant_id and adapter.authorize(principal,item,AccessRequest(action="document.write",scope=item.scope,category=item.category))}
+        file_status = service._catalog.file_status(identity.tenant_id)
+        return JSONResponse([item for item in file_status if item.get("document_id") in writable],headers={"Cache-Control":"no-store"})
 
     @app.get("/api/policies")
     def policy_list(request: Request) -> JSONResponse:

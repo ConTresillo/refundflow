@@ -338,6 +338,80 @@ def test_development_exposes_evidence_without_enabling_policy_lab(tmp_path, monk
 
 
 
+def test_document_write_permission_requires_explicit_seed_and_authorizes_write(tmp_path):
+    from app.iam import (
+        AccessRequest,
+        CasbinAuthorizationAdapter,
+        Document,
+        DocumentGrant,
+        Membership,
+        Principal,
+        Role,
+    )
+    from app.iam_store import SQLiteIAMStore
+
+    store = SQLiteIAMStore(tmp_path / "iam.sqlite3")
+    store.put_group("northstar-retail", "billing-analysts")
+    principal = Principal(user_id="bob.patel", memberships=(Membership(tenant_id="northstar-retail", group_ids=("billing-analysts",)),))
+    store.put_principal(principal)
+    document = Document(id="billing-refunds", tenant_id="northstar-retail", owner_user_id="bob.patel", category="billing-policy", scope="department:billing", grants=(DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"), DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.write")))
+    store.put_document(document)
+    role = Role(id="unused", permissions=())
+    write_only = document.model_copy(update={"grants": (DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.write"),)})
+    adapter = CasbinAuthorizationAdapter((role,), principals=(principal,), documents=(write_only,))
+    write_access = AccessRequest(action="document.write", scope=document.scope, category=document.category)
+    assert adapter.authorize(principal, write_only, write_access)
+    assert not adapter.authorize(principal, write_only, AccessRequest(action="document.read", scope=document.scope, category=document.category))
+    assert not adapter.authorize(principal, write_only, AccessRequest(action="document.delete", scope=document.scope, category=document.category))
+
+
+def test_runtime_pdf_upload_authorization_and_page_citation(tmp_path, monkeypatch):
+    import re
+
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    from app.iam_store import SQLiteIAMStore
+    from app.web_runtime import create_app
+
+    monkeypatch.setenv("REFUNDFLOW_POLICY_LAB", "1")
+    monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
+    client = TestClient(create_app(environment="development"), client=("127.0.0.1", 8000), follow_redirects=False)
+    home = client.get("/"); csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', home.text).group(1)
+    client.post("/dev/login", json={"subject_id":"bob.patel"}, headers={"x-csrf-token":csrf,"origin":"http://testserver"})
+    home = client.get("/"); csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', home.text).group(1)
+    writer=PdfWriter(); page=writer.add_blank_page(width=300,height=300)
+    stream=DecodedStreamObject(); stream.set_data(b"BT /F1 12 Tf 20 200 Td (newuploadcitation) Tj ET")
+    page[NameObject("/Contents")]=writer._add_object(stream)
+    font=DictionaryObject(); font[NameObject("/Type")]=NameObject("/Font"); font[NameObject("/Subtype")]=NameObject("/Type1"); font[NameObject("/BaseFont")]=NameObject("/Helvetica")
+    fonts=DictionaryObject(); fonts[NameObject("/F1")]=writer._add_object(font); resources=DictionaryObject(); resources[NameObject("/Font")]=fonts; page[NameObject("/Resources")]=resources
+    import io
+    buffer=io.BytesIO(); writer.write(buffer); pdf=buffer.getvalue()
+    headers={"origin":"http://testserver","x-csrf-token":csrf,"content-type":"application/pdf"}
+    url="/api/policies/billing-refunds/pdf?new_version=9.9&effective_from=2026-11-19"
+    store=SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    _, documents=store.authorization_document_snapshot()
+    billing=next(item for item in documents if item.id=="billing-refunds")
+    store.put_document(billing.model_copy(update={"grants":tuple(grant for grant in billing.grants if grant.permission!="document.write")}),occurred_at="test-revoke-write")
+    revoked=client.post(url,content=b"not a pdf",headers=headers)
+    assert revoked.status_code==403
+    store.put_document(billing,occurred_at="test-restore-write")
+    denied=TestClient(create_app(environment="development"),client=("127.0.0.1",8000),follow_redirects=False)
+    denied_home=denied.get("/"); denied_csrf=re.search(r'<meta name="csrf-token" content="([^"]+)"',denied_home.text).group(1)
+    denied.post("/dev/login",json={"subject_id":"dana.ross"},headers={"x-csrf-token":denied_csrf,"origin":"http://testserver"})
+    assert denied.post(url,content=pdf,headers={**headers,"x-csrf-token":denied_csrf}).status_code==403
+    assert client.post(url,content=pdf,headers={**headers,"origin":"https://attacker.example"}).status_code==403
+    bad=client.post("/api/policies/billing-refunds/pdf?new_version=10.0&effective_from=2026-11-19",content=b"not a pdf",headers=headers)
+    assert bad.status_code==422
+    assert client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"refund receipt","as_of":"2026-11-20"}).json()[0]["citation"].startswith("billing-refunds@1.0#")
+    response=client.post(url,content=pdf,headers=headers)
+    assert response.status_code==200,response.text
+    results=client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"newuploadcitation","as_of":"2026-11-20"})
+    assert results.status_code==200 and results.json()[0]["citation"].startswith("billing-refunds@9.9#page-1")
+    status=client.get("/api/policy-ingestion-status")
+    assert status.status_code==200 and status.json()
+
+
 def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tmp_path, monkeypatch):
     import re
 

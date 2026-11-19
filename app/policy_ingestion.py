@@ -97,7 +97,7 @@ class PolicyIngestionService:
         if not isinstance(record.get("excerpts"), list) or not record["excerpts"]:
             raise ValueError("policy record must include provenance excerpts")
         policy_id = record.get("id")
-        if not isinstance(policy_id, str) or Path(path).stem != policy_id:
+        if not isinstance(policy_id, str) or Path(path).stem not in {policy_id, f"pdf-{policy_id}"}:
             raise ValueError("PDF filename must match policy ID")
         try:
             sections = parse_pdf(path)
