@@ -753,11 +753,21 @@ class PolicyChangeService:
             allowed_policy_ids=allowed_policy_ids,
             top_k=min(max(int(top_k), 1), 10),
         )
-        if authorization_revision is not None or document_revision is not None:
+        if (
+            authorization_revision is not None
+            or document_revision is not None
+            or tenant_id is not None
+            or subject_id is not None
+        ):
             from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
             from app.iam_store import SQLiteIAMStore
 
-            if tenant_id is None or subject_id is None:
+            if (
+                authorization_revision is None
+                or document_revision is None
+                or tenant_id is None
+                or subject_id is None
+            ):
                 return []
             store = SQLiteIAMStore(self._database)
             current_principal_revision, principals = store.authorization_principal_snapshot()
@@ -789,6 +799,14 @@ class PolicyChangeService:
             if not set(allowed_policy_ids or ()).issubset(currently_allowed):
                 return []
             if policy_id is not None and policy_id not in currently_allowed:
+                return []
+            final_records = self._catalog.current_records()
+            if any(
+                final_records.get(item_id) is None
+                or final_records[item_id]["status"] != "active"
+                or final_records[item_id]["department_id"] != department_id
+                for item_id in set(allowed_policy_ids or ())
+            ):
                 return []
         return [
             {

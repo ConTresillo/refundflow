@@ -308,9 +308,12 @@ def test_policy_write_api_requires_csrf_and_rejects_cross_origin(tmp_path):
 
 def test_development_exposes_evidence_without_enabling_policy_lab(tmp_path, monkeypatch):
     import re
+    from pathlib import Path
 
     from app.iam_store import SQLiteIAMStore
     from app.web_runtime import create_app as create_runtime_app
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
 
     monkeypatch.delenv("REFUNDFLOW_POLICY_LAB", raising=False)
     monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
