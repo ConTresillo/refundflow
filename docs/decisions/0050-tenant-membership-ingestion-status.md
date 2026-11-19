@@ -1,0 +1,12 @@
+# Decision 0050 — require active tenant membership for ingestion status
+
+- Date: 2026-11-19. Goal: fail closed on the tenant-scoped ingestion-status endpoint after an active tenant membership is revoked.
+- Context: `/api/policy-ingestion-status` already constrained status rows to the identity tenant and filtered them through current document write permission, but it did not verify the signed-in principal's current membership in that tenant. A stale tenant identity could therefore reach status read logic after membership removal.
+- Decision: return an empty, `no-store` response unless the persisted principal still has membership in the identity's tenant. Keep existing PyCasbin document write filtering and the existing revision-consistent principal/document snapshots. Do not alter policy listing because catalog ownership isn't tenant-qualified there.
+- Alternatives: rely solely on the session tenant claim (stale membership risk); broaden this into catalog tenant ownership changes (requires a separate, carefully designed data mapping and broader retrieval validation).
+- Touched: `app/policy_routes.py`, `tests/test_policy_admin_web.py`, `docs/ROADMAP.md`, this record. No dependencies.
+- Test-first: added a regression that first verifies authorized status then changes persisted membership to a different tenant; initial RED was a fixture method-name error before assertion, corrected by seeding `PolicyCatalog`; GREEN then observed empty status after membership change.
+- Verification after final code edit: `.venv/Scripts/python.exe -m pytest tests/test_policy_admin_web.py -q` — 14 passed (13 existing LangSmith deprecation warnings). `.venv/Scripts/python.exe -m ruff check app/policy_routes.py tests/test_policy_admin_web.py` — passed. `.venv/Scripts/python.exe -m compileall -q app tests` — passed. `.venv/Scripts/python.exe -m pip check` — no broken requirements. `git diff --check` — passed.
+- Security/artifact review: local SQLite/TestClient only; no external services, model resources, credentials or user data. Status data stays document-write-filtered. No real loopback UI/API smoke needed for this API-only guard; loopback remains unverified for this increment.
+- Commit/remote/CI: pending.
+- Remaining/next: full P4b maintained DOCX/text/Markdown adapters and isolation, including malformed/partial handling. P2 tenant-keyed index/catalog ownership constraints remain separate; no change to policy-list endpoint.

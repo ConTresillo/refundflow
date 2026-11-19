@@ -368,6 +368,46 @@ def test_document_write_permission_requires_explicit_seed_and_authorizes_write(t
     assert not adapter.authorize(principal, write_only, AccessRequest(action="document.delete", scope=document.scope, category=document.category))
 
 
+def test_ingestion_status_requires_current_tenant_membership(tmp_path, monkeypatch):
+    import re
+
+    from app.iam import Membership, Principal
+    from app.iam_store import SQLiteIAMStore
+    from app.policy_catalog import PolicyCatalog
+    from app.web_runtime import create_app
+
+    monkeypatch.setenv("REFUNDFLOW_POLICY_LAB", "1")
+    monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
+    client = TestClient(
+        create_app(environment="development"),
+        client=("127.0.0.1", 8000),
+        follow_redirects=False,
+    )
+    home = client.get("/")
+    match = re.search(r'<meta name="csrf-token" content="([^"]+)"', home.text)
+    assert match is not None
+    client.post(
+        "/dev/login",
+        json={"subject_id": "bob.patel"},
+        headers={"x-csrf-token": match.group(1), "origin": "http://testserver"},
+    )
+
+    store = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    PolicyCatalog(tmp_path / "refundflow.sqlite3").record_file_status(
+        "northstar-retail", "billing-refunds", status="indexed", message="ready", occurred_at="test"
+    )
+    assert client.get("/api/policy-ingestion-status").json()
+
+    store.put_principal(
+        Principal(
+            user_id="bob.patel",
+            memberships=(Membership(tenant_id="contoso-logistics", group_ids=("risk-reviewers",)),),
+        ),
+        occurred_at="test-revoke-membership",
+    )
+    assert client.get("/api/policy-ingestion-status").json() == []
+
+
 def test_runtime_pdf_upload_authorization_and_page_citation(tmp_path, monkeypatch):
     import re
 
