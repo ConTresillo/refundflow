@@ -665,7 +665,7 @@ class PolicyChangeService:
         colliding_policy_ids = {
             document_id for document_id, owners in tenant_owners.items() if len(owners) > 1
         }
-        roles = tuple(Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
+        roles = tuple(Role(id=role, tenant_id=tenant_id, permissions=store.list_role_permissions(tenant_id, role))
                       for role in store.list_roles(tenant_id))
         adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
         allowed_policy_ids = {
@@ -784,7 +784,7 @@ class PolicyChangeService:
                 item.id: item for item in documents if item.tenant_id == tenant_id
             }
             roles = tuple(
-                Role(id=role, permissions=store.list_role_permissions(tenant_id, role))
+                Role(id=role, tenant_id=tenant_id, permissions=store.list_role_permissions(tenant_id, role))
                 for role in store.list_roles(tenant_id)
             )
             adapter = CasbinAuthorizationAdapter(

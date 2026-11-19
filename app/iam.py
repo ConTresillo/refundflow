@@ -17,6 +17,7 @@ class Role(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    tenant_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9-]*$")
     permissions: tuple[str, ...] = ()
 
     @model_validator(mode="after")
@@ -119,13 +120,14 @@ class CasbinAuthorizationAdapter:
         principals: tuple[Principal, ...],
         documents: tuple[Document, ...],
     ) -> None:
-        self._roles = {role.id: role for role in roles}
+        role_keys = [(role.tenant_id, role.id) for role in roles]
+        self._roles = {key: role for key, role in zip(role_keys, roles)}
         self._principals = {principal.user_id: principal for principal in principals}
         self._documents = {
             (document.tenant_id, document.id): document for document in documents
         }
         if len(self._roles) != len(roles):
-            raise ValueError("role IDs must be unique")
+            raise ValueError("role IDs must be unique within a tenant")
         if len(self._principals) != len(principals):
             raise ValueError("principal user IDs must be unique")
         if len(self._documents) != len(documents):
@@ -148,7 +150,6 @@ class CasbinAuthorizationAdapter:
             or stored_document != document
         ):
             return False
-
         return bool(
             self._enforcer.enforce(
                 f"user:{known_principal.user_id}",
@@ -161,10 +162,11 @@ class CasbinAuthorizationAdapter:
         )
 
     def _load_snapshot(self) -> None:
-        for role in self._roles.values():
+        for (tenant_id, role_id), role in self._roles.items():
+            subject = f"role:{tenant_id or 'global'}:{role_id}"
             for permission in role.permissions:
                 self._enforcer.add_named_grouping_policy(
-                    "g2", f"role:{role.id}", permission
+                    "g2", subject, permission
                 )
 
         for principal in self._principals.values():
@@ -177,16 +179,28 @@ class CasbinAuthorizationAdapter:
                         "g", user_subject, f"group:{group_id}", domain
                     )
                 for role_id in membership.role_ids:
-                    self._enforcer.add_named_grouping_policy(
-                        "g", user_subject, f"role:{role_id}", domain
-                    )
+                    role = self._roles.get((membership.tenant_id, role_id))
+                    if role is None:
+                        role = self._roles.get((None, role_id))
+                    if role is not None:
+                        self._enforcer.add_named_grouping_policy(
+                            "g", user_subject, f"role:{role.tenant_id or 'global'}:{role_id}", domain
+                        )
 
         for document in self._documents.values():
             domain = f"tenant:{document.tenant_id}"
             resource = f"document:{document.id}"
             for grant in document.grants:
+                subject = f"{grant.subject_type}:{grant.subject_id}"
+                if grant.subject_type == "role":
+                    role = self._roles.get((document.tenant_id, grant.subject_id))
+                    if role is None:
+                        role = self._roles.get((None, grant.subject_id))
+                    if role is None or grant.permission not in role.permissions:
+                        continue
+                    subject = f"role:{role.tenant_id or 'global'}:{grant.subject_id}"
                 self._enforcer.add_policy(
-                    f"{grant.subject_type}:{grant.subject_id}",
+                    subject,
                     grant.subject_type,
                     domain,
                     resource,

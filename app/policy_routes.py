@@ -279,7 +279,7 @@ def register_policy_routes(
         document = next((item for item in documents if item.id == policy_id and item.tenant_id == identity.tenant_id), None)
         if principal is None or document is None:
             raise HTTPException(status_code=403, detail="document write denied")
-        roles = tuple(Role(id=role, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
+        roles = tuple(Role(id=role, tenant_id=identity.tenant_id, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
         adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
         request_access = AccessRequest(action="document.write", scope=document.scope, category=document.category)
         if not adapter.authorize(principal, document, request_access):
@@ -351,7 +351,7 @@ def register_policy_routes(
         principal = next((item for item in principals if item.user_id == identity.subject_id), None)
         if principal is None or not any(member.tenant_id == identity.tenant_id for member in principal.memberships):
             return JSONResponse([], headers={"Cache-Control": "no-store"})
-        roles = tuple(Role(id=role, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
+        roles = tuple(Role(id=role, tenant_id=identity.tenant_id, permissions=store.list_role_permissions(identity.tenant_id, role)) for role in store.list_roles(identity.tenant_id))
         adapter = CasbinAuthorizationAdapter(roles, principals=principals, documents=documents)
         writable = {item.id for item in documents if item.tenant_id == identity.tenant_id and adapter.authorize(principal,item,AccessRequest(action="document.write",scope=item.scope,category=item.category))}
         file_status = service._catalog.file_status(identity.tenant_id)

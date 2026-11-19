@@ -298,6 +298,39 @@ def test_caller_supplied_document_must_match_trusted_snapshot():
     )
 
 
+def test_same_role_id_in_two_tenants_cannot_share_permissions():
+    principal = Principal(
+        user_id="alice",
+        memberships=(
+            Membership(tenant_id="northstar", role_ids=("reader",)),
+            Membership(tenant_id="southstar", role_ids=("reader",)),
+        ),
+    )
+    north_document = Document(
+        id="north-policy", tenant_id="northstar", owner_user_id="bob",
+        category="billing-policy", scope="department:billing",
+        grants=(DocumentGrant(subject_type="role", subject_id="reader", permission="document.read"),),
+    )
+    south_document = Document(
+        id="south-policy", tenant_id="southstar", owner_user_id="bob",
+        category="billing-policy", scope="department:billing",
+        grants=(DocumentGrant(subject_type="role", subject_id="reader", permission="document.read"),),
+    )
+    adapter = _adapter(
+        (
+            Role(id="reader", tenant_id="northstar", permissions=("document.read",)),
+            Role(id="reader", tenant_id="southstar", permissions=("document.write",)),
+        ),
+        principal,
+        north_document,
+        additional_documents=(south_document,),
+    )
+    request = AccessRequest(action="document.read", scope="department:billing")
+
+    assert adapter.authorize(principal, north_document, request)
+    assert not adapter.authorize(principal, south_document, request)
+
+
 def test_role_without_requested_permission_is_denied():
     principal = Principal(
         user_id="alice",
