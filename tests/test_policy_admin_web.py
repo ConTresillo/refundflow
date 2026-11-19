@@ -406,10 +406,45 @@ def test_runtime_pdf_upload_authorization_and_page_citation(tmp_path, monkeypatc
     assert client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"refund receipt","as_of":"2026-11-20"}).json()[0]["citation"].startswith("billing-refunds@1.0#")
     response=client.post(url,content=pdf,headers=headers)
     assert response.status_code==200,response.text
+    active_hash=client.get("/api/policies").json()
+    active_hash=next(item["content_hash"] for item in active_hash if item["policy_id"]=="billing-refunds")
     results=client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"newuploadcitation","as_of":"2026-11-20"})
     assert results.status_code==200 and results.json()[0]["citation"].startswith("billing-refunds@9.9#page-1")
+    writer2=PdfWriter(); page2=writer2.add_blank_page(width=300,height=300)
+    stream2=DecodedStreamObject(); stream2.set_data(b"BT /F1 12 Tf 20 200 Td (differentpdfcontent) Tj ET")
+    page2[NameObject("/Contents")]=writer2._add_object(stream2)
+    font2=DictionaryObject(); font2[NameObject("/Type")]=NameObject("/Font"); font2[NameObject("/Subtype")]=NameObject("/Type1"); font2[NameObject("/BaseFont")]=NameObject("/Helvetica")
+    fonts2=DictionaryObject(); fonts2[NameObject("/F1")]=writer2._add_object(font2); resources2=DictionaryObject(); resources2[NameObject("/Font")]=fonts2; page2[NameObject("/Resources")]=resources2
+    changed_buffer=io.BytesIO(); writer2.write(changed_buffer)
+    changed=client.post("/api/policies/billing-refunds/pdf?new_version=10.1&effective_from=2026-11-20",content=changed_buffer.getvalue(),headers=headers)
+    assert changed.status_code==200,changed.text
+    changed_policy=next(item for item in client.get("/api/policies").json() if item["policy_id"]=="billing-refunds")
+    assert changed_policy["content_hash"] != active_hash
+    assert client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"differentpdfcontent","as_of":"2026-11-20"}).json()[0]["citation"].startswith("billing-refunds@10.1#page-1")
     status=client.get("/api/policy-ingestion-status")
     assert status.status_code==200 and status.json()
+
+
+def test_streamed_pdf_body_over_declared_length_preserves_active_version(tmp_path, monkeypatch):
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from app.web_runtime import create_app
+
+    monkeypatch.setenv("REFUNDFLOW_POLICY_LAB", "1")
+    monkeypatch.setenv("REFUNDFLOW_DATA_DIR", str(tmp_path))
+    client=TestClient(create_app(environment="development"),client=("127.0.0.1",8000),follow_redirects=False)
+    home=client.get("/"); csrf=re.search(r'<meta name="csrf-token" content="([^"]+)"',home.text).group(1)
+    client.post("/dev/login",json={"subject_id":"bob.patel"},headers={"x-csrf-token":csrf,"origin":"http://testserver"})
+    home=client.get("/"); csrf=re.search(r'<meta name="csrf-token" content="([^"]+)"',home.text).group(1)
+    headers={"origin":"http://testserver","x-csrf-token":csrf,"content-type":"application/pdf","content-length":"1"}
+    response=client.post("/api/policies/billing-refunds/pdf?new_version=77.8&effective_from=2026-11-20",content=b"oversized body",headers=headers)
+    assert response.status_code==413
+    assert all(item["version"]!="77.8" for item in client.get("/api/policies").json())
+    citations=client.get("/api/policy-search",params={"policy_id":"billing-refunds","query":"refund receipt","as_of":"2026-11-20"})
+    assert citations.status_code==200 and citations.json()[0]["citation"].startswith("billing-refunds@1.0#")
+    assert not list((tmp_path / ".staging").glob("pdf-*.pdf"))
 
 
 def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tmp_path, monkeypatch):
@@ -432,6 +467,22 @@ def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tm
     assert allowed.status_code == 200
     assert allowed.json()
     assert any(item["text"] for item in allowed.json())
+    from app.iam import (
+        AccessRequest,
+        CasbinAuthorizationAdapter,
+        Document,
+        DocumentGrant,
+        Role,
+    )
+    snapshot=SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
+    _, principals=snapshot.authorization_principal_snapshot()
+    _, documents=snapshot.authorization_document_snapshot()
+    bob=next(item for item in principals if item.user_id=="bob.patel")
+    roles=tuple(Role(id=role,permissions=snapshot.list_role_permissions("northstar-retail",role)) for role in snapshot.list_roles("northstar-retail"))
+    other=Document(id="billing-other",tenant_id="northstar-retail",owner_user_id="bob.patel",category="billing-policy",scope="department:billing",grants=(DocumentGrant(subject_type="user",subject_id="bob.patel",permission="document.read"),))
+    read_only_adapter=CasbinAuthorizationAdapter(roles,principals=principals,documents=(*documents,other))
+    assert read_only_adapter.authorize(bob,other,AccessRequest(action="document.read",scope=other.scope,category=other.category))
+    assert not read_only_adapter.authorize(bob,other,AccessRequest(action="document.write",scope=other.scope,category=other.category))
 
     client.post("/dev/logout", headers={"x-csrf-token": re.search(r'<meta name="csrf-token" content="([^"]+)"', client.get("/").text).group(1), "origin": "http://testserver"})
     fresh = client.get("/")

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import re
 import sqlite3
+import tempfile
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -234,7 +236,6 @@ def register_policy_routes(
         from app.document_parsers import MAX_PDF_BYTES
         from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
         from app.iam_store import SQLiteIAMStore
-        from app.policies import compute_content_hash
         from app.policy_ingestion import PolicyIngestionService
 
         identity = current_identity(request)
@@ -246,9 +247,11 @@ def register_policy_routes(
             content_length = int(request.headers.get("content-length", "-1"))
         except ValueError as error:
             raise HTTPException(status_code=400, detail="invalid Content-Length") from error
+        if content_length <= 0:
+            raise HTTPException(status_code=411, detail="Content-Length is required")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,31}", new_version):
             raise HTTPException(status_code=422, detail="invalid policy version")
-        if content_length < 0 or content_length > MAX_PDF_BYTES:
+        if content_length > MAX_PDF_BYTES:
             raise HTTPException(status_code=413, detail="PDF exceeds the 8 MiB upload limit")
         store = SQLiteIAMStore(service._database)
         revision, principals = store.authorization_principal_snapshot()
@@ -268,9 +271,6 @@ def register_policy_routes(
             date.fromisoformat(effective_from)
         except ValueError as error:
             raise HTTPException(status_code=422, detail="effective_from must be ISO date") from error
-        payload = await request.body()
-        if len(payload) != content_length:
-            raise HTTPException(status_code=413, detail="invalid PDF body length")
         current_revision, _ = store.authorization_principal_snapshot()
         current_doc_revision, _ = store.authorization_document_snapshot()
         if current_revision != revision or current_doc_revision != document_revision:
@@ -282,21 +282,35 @@ def register_policy_routes(
         record.update(version=new_version, status="active", effective_from=effective_from,
                       source_name="Uploaded synthetic policy PDF", source_type="synthetic_demo",
                       provenance="Locally uploaded synthetic PDF; bytes are transient during ingestion only.",
-                      license_notes="Synthetic demo content; uploaded locally.", excerpts=["Extracted PDF source"])
+                      license_notes="Synthetic demo content; uploaded locally.", excerpts=[])
         record["source_url"] = ""
-        record["content_hash"] = compute_content_hash(record)
         if service._catalog.version(policy_id, new_version) is not None:
             raise HTTPException(status_code=409, detail="policy version is immutable")
         stage_dir = Path(service._database).parent / ".staging"
         stage_dir.mkdir(exist_ok=True)
         staged_path = None
         try:
-            staged_path = stage_dir / f"pdf-{policy_id}.pdf"
-            with staged_path.open("xb") as staged:
-                staged.write(payload)
-
+            with tempfile.NamedTemporaryFile(prefix="pdf-", suffix=".pdf", dir=stage_dir, delete=False) as staged:
+                staged_path = Path(staged.name)
+                received = 0
+                async for chunk in request.stream():
+                    received += len(chunk)
+                    if received > MAX_PDF_BYTES or received > content_length:
+                        raise HTTPException(status_code=413, detail="PDF exceeds the 8 MiB upload limit")
+                    staged.write(chunk)
+                if received != content_length:
+                    raise HTTPException(status_code=413, detail="invalid PDF body length")
+            from app.document_parsers import parse_pdf
+            parsed = parse_pdf(staged_path)
+            record["excerpts"] = [section.text for section in parsed]
+            record["content_hash"] = hashlib.sha256("\n".join(record["excerpts"]).encode("utf-8")).hexdigest()
+            ingestion_path = stage_dir / f"pdf-{policy_id}.pdf"
+            staged_path.replace(ingestion_path)
+            staged_path = ingestion_path
             outcome = PolicyIngestionService(service._source_dir, service._catalog, service._index).replace_pdf(
                 staged_path, record, occurred_at=datetime.now(timezone.utc).isoformat(), tenant_id=identity.tenant_id)
+        except HTTPException:
+            raise
         except (OSError, ValueError, sqlite3.Error) as error:
             raise HTTPException(status_code=422, detail="PDF replacement failed; active version preserved") from error
         finally:

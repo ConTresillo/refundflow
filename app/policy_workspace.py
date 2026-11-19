@@ -42,7 +42,7 @@ def seed_development_evidence_grants(service: PolicyChangeService) -> None:
                 grants=(
                     (
                         DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.read"),
-                        DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.write"),
+                        *((DocumentGrant(subject_type="user", subject_id="bob.patel", permission="document.write"),) if policy_id == "billing-refunds" else ()),
                     )
                     if department_id == "billing" else ()
                 ),
