@@ -1,8 +1,10 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
 
+from app.document_parsers import DocumentParseError
 from app.incremental_index import SQLitePolicyIndex
 from app.policy_catalog import PolicyCatalog
 from app.policy_ingestion import PolicyIngestionService
@@ -372,3 +374,92 @@ def test_replace_document_rejects_unsupported_format(tmp_path):
     record = catalog.current("billing-refunds")
     with pytest.raises(ValueError, match="unsupported document format"):
         service.replace_document(source_dir / "note.bin", dict(record), occurred_at="2026-06-02T00:00:00Z", tenant_id="northstar-retail")
+
+
+def test_source_watch_status_writes_observed_hash_and_success_time(tmp_path):
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "refundkeep clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    watch = catalog.source_watch_status()["billing-refunds"]
+    assert watch["observed_hash"] != ""
+    assert watch["observed_hash"] == catalog.current("billing-refunds")["content_hash"]
+    assert watch["observed_at"] == "2026-06-01T00:00:00Z"
+    assert watch["last_success_at"] == "2026-06-01T00:00:00Z"
+    assert watch["last_failure_at"] is None
+    assert watch["failed_attempts"] == "0"
+
+
+def test_failed_parse_reports_failure_and_preserves_previous_version(tmp_path):
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "refundkeep clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    corrupt = source_dir / "billing-refunds.docx"
+    corrupt.write_bytes(b"this is not a zip")
+    record = catalog.current("billing-refunds")
+    with pytest.raises(DocumentParseError):
+        service.replace_document(corrupt, record, occurred_at="2026-06-02T00:00:00Z", tenant_id="northstar-retail")
+
+    assert catalog.current("billing-refunds")["version"] == "1.0"
+    assert catalog.version("billing-refunds", "1.0")["status"] == "active"
+    assert catalog.file_status("northstar-retail")[0]["status"] == "error"
+    assert catalog.file_status("northstar-retail")[0]["message"] == "DocumentParseError"
+    assert catalog.source_watch_status()["billing-refunds"]["failed_attempts"] == "1"
+    assert catalog.file_status("northstar-retail")[0]["occurred_at"] == "2026-06-02T00:00:00Z"
+
+
+def test_directory_outage_preserves_catalog_and_watermark(tmp_path):
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "refundkeep clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    watch_before = catalog.source_watch_status()["billing-refunds"]
+    shutil.rmtree(source_dir)
+    missing = PolicyIngestionService(tmp_path / "policies", catalog, index)
+
+    with pytest.raises(FileNotFoundError):
+        missing.sync(occurred_at="2026-06-02T00:00:00Z")
+
+    assert catalog.current("billing-refunds")["status"] == "active"
+    assert catalog.current("billing-refunds")["version"] == "1.0"
+    watch_after = catalog.source_watch_status()["billing-refunds"]
+    assert watch_after["observed_hash"] == watch_before["observed_hash"]
+    assert watch_after["last_success_at"] == watch_before["last_success_at"]
+    assert watch_after["last_failure_at"] is None
+
+
+def test_unchanged_re_sync_does_not_advance_watermark(tmp_path):
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "refundkeep clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    watch_before = catalog.source_watch_status()["billing-refunds"]
+    result = service.sync(occurred_at="2026-06-02T00:00:00Z")
+
+    assert (result.added, result.changed, result.removed, result.unchanged) == (0, 0, 0, 1)
+    assert result.index.processed == 0
+    watch_after = catalog.source_watch_status()["billing-refunds"]
+    assert watch_after["observed_hash"] == watch_before["observed_hash"]
+    assert watch_after["last_success_at"] == watch_before["last_success_at"]
+    assert watch_after["failed_attempts"] == "0"

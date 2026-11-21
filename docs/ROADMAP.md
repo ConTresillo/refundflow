@@ -145,6 +145,7 @@ Run in `E:/RefundFlow` on `dev` using Git Bash. First `git status --short; git b
 - **P4b status (2026-11-22):** DOCX, TXT, and Markdown parsers are implemented, bounded, and fail-closed; `PolicyIngestionService.replace_document` dispatches by file suffix. Each format flows through the same catalog + FTS + cited-retrieval path as PDF.
 - **Verification:** `pytest tests/test_document_parsers.py tests/test_policy_ingestion.py -q` → 18 passed; `pytest -q` → 115 passed; `ruff check app tests`, `compileall`, and `pip check` all clear.
 - The remaining DOCX/text/Markdown blockers are closed; remaining P4b items are now purely documentation/status.
+- **P4c source watermark and outage safety (2026-11-22):** a `source_watermarks` table persists the observed revision per policy; on a full successful reconciliation the watermark advances. Failed uploads preserve the previous evidence, record the failure, and report lag (`last_failure_at`, `failed_attempts`). A missing source directory fails closed and withdraws nothing, and a changed source without a version change is rejected without mutating the catalog.
 
 ### P5 — durable async evidence run (depends P2; P3/P4 add richer sources, not queue blockers)
 

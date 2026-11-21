@@ -104,6 +104,7 @@ class PolicyIngestionService:
             self._catalog.record_file_status(
                 tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
             )
+            self._catalog.record_source_failure(policy_id, occurred_at)
             raise
         return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
 
@@ -121,6 +122,7 @@ class PolicyIngestionService:
             self._catalog.record_file_status(
                 tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
             )
+            self._catalog.record_source_failure(policy_id, occurred_at)
             raise
         return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
 
@@ -138,6 +140,7 @@ class PolicyIngestionService:
             self._catalog.record_file_status(
                 tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
             )
+            self._catalog.record_source_failure(policy_id, occurred_at)
             raise
         return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
 
@@ -155,6 +158,7 @@ class PolicyIngestionService:
             self._catalog.record_file_status(
                 tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
             )
+            self._catalog.record_source_failure(policy_id, occurred_at)
             raise
         return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
 
@@ -189,10 +193,12 @@ class PolicyIngestionService:
                 complete = {(policy_id, version["version"]) for version in self._catalog.versions(policy_id, connection=connection)}
                 index_result = self._index.ingest_in_transaction(connection, chunks, complete_versions=complete)
                 self._catalog.record_sync_outcomes({policy_id: "added" if added else "changed"}, occurred_at=occurred_at, connection=connection)
+                self._catalog.record_source_watermark(policy_id, record["content_hash"], occurred_at, connection)
             self._catalog.record_file_status(tenant_id, policy_id, status="indexed", message="document indexed", occurred_at=occurred_at)
             return PolicySyncResult(added, changed, 0, 0, index_result)
         except (ValueError, OSError) as error:
             self._catalog.record_file_status(tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at)
+            self._catalog.record_source_failure(policy_id, occurred_at)
             raise
 
     @staticmethod
@@ -296,6 +302,7 @@ class PolicyIngestionService:
                     self._catalog.publish(
                         record, occurred_at=occurred_at, connection=connection
                     )
+                    self._catalog.record_source_watermark(policy_id, record["content_hash"], occurred_at, connection)
                     added += 1
                     outcomes[policy_id] = "added"
                     chunks.extend(self.chunks_for_record(record))
@@ -327,10 +334,11 @@ class PolicyIngestionService:
                         occurred_at=occurred_at,
                         connection=connection,
                     )
-                self._catalog.publish(
-                    record, occurred_at=occurred_at, connection=connection
-                )
-                changed += 1
+                    self._catalog.publish(
+                        record, occurred_at=occurred_at, connection=connection
+                    )
+                    self._catalog.record_source_watermark(policy_id, record["content_hash"], occurred_at, connection)
+                    changed += 1
                 outcomes[policy_id] = "changed"
                 complete_versions.update(
                     (policy_id, version["version"])
