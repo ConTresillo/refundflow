@@ -282,3 +282,93 @@ def test_catalog_and_index_changes_roll_back_together(tmp_path):
         for item in index.search("refundbeforecommit", department_id="billing")
     ] == ["refundbeforecommit clause"]
     assert index.search("refundaftercommit", department_id="billing") == []
+
+
+def make_docx_bytes(paragraphs):
+    from io import BytesIO
+
+    from docx import Document
+
+    document = Document()
+    for paragraph in paragraphs:
+        document.add_paragraph(paragraph)
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def test_replacement_from_txt_md_and_docx_indexes_and_cites_new_sections(tmp_path):
+    from app.policy_ingestion import PolicyIngestionService
+    from app.retrieval import SQLiteEvidenceRetriever
+
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "legacy refund clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    retriever = SQLiteEvidenceRetriever(index, catalog)
+
+    def publish(source_bytes, filename, new_version, effective="2026-06-02"):
+        path = source_dir / filename
+        path.write_bytes(source_bytes)
+        current = catalog.current("billing-refunds")
+        record = dict(current)
+        record.update(
+            version=new_version,
+            status="active",
+            effective_from=effective,
+            source_type="synthetic_demo",
+            source_name="Uploaded policy",
+            provenance="Locally uploaded policy; bytes are transient.",
+            excerpts=[],
+        )
+        return service.replace_document(path, record, occurred_at="2026-06-03T00:00:00Z", tenant_id="northstar-retail")
+
+    md = "# Refund\n\nReceipt and payment reference are required."
+    result = publish(md.encode("utf-8"), "billing-refunds.md", "2.0")
+    assert result.changed == 1
+    assert catalog.current("billing-refunds")["version"] == "2.0"
+    assert catalog.version("billing-refunds", "1.0")["status"] == "superseded"
+    matches = retriever.retrieve("receipt", departments={"billing"}, as_of="2026-06-03", top_k=5)
+    assert [item.text for item in matches] == ["Receipt and payment reference are required."]
+    assert matches[0].version == "2.0"
+    assert [item.citation for item in matches] == ["billing-refunds@2.0#md-p2"]
+
+    docx_bytes = make_docx_bytes(["DOCX version clause."])
+    result = publish(docx_bytes, "billing-refunds.docx", "3.0")
+    assert result.changed == 1
+    assert catalog.current("billing-refunds")["version"] == "3.0"
+    assert catalog.version("billing-refunds", "2.0")["status"] == "superseded"
+    matches = retriever.retrieve("DOCX", departments={"billing"}, as_of="2026-06-03", top_k=5)
+    assert [item.text for item in matches] == ["DOCX version clause."]
+    assert matches[0].version == "3.0"
+
+    txt = "Text policy replacement: evidence required."
+    result = publish(txt.encode("utf-8"), "billing-refunds.txt", "4.0")
+    assert result.changed == 1
+    assert catalog.current("billing-refunds")["version"] == "4.0"
+    assert catalog.version("billing-refunds", "3.0")["status"] == "superseded"
+    matches = retriever.retrieve("evidence required", departments={"billing"}, as_of="2026-06-03", top_k=5)
+    assert [item.text for item in matches] == ["Text policy replacement: evidence required."]
+    assert matches[0].version == "4.0"
+
+
+def test_replace_document_rejects_unsupported_format(tmp_path):
+    from app.policy_ingestion import PolicyIngestionService
+
+    source_dir = tmp_path / "policies"
+    source_dir.mkdir()
+    write_policy(source_dir, "billing-refunds", "1.0", "legacy clause")
+    database = tmp_path / "refundflow.sqlite3"
+    catalog = PolicyCatalog(database)
+    index = SQLitePolicyIndex(database)
+    service = PolicyIngestionService(source_dir, catalog, index)
+    service.sync(occurred_at="2026-06-01T00:00:00Z")
+
+    record = catalog.current("billing-refunds")
+    with pytest.raises(ValueError, match="unsupported document format"):
+        service.replace_document(source_dir / "note.bin", dict(record), occurred_at="2026-06-02T00:00:00Z", tenant_id="northstar-retail")

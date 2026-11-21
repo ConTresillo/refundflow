@@ -10,7 +10,14 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from app.document_parsers import DocumentParseError, ParsedSection, parse_pdf
+from app.document_parsers import (
+    DocumentParseError,
+    ParsedSection,
+    parse_docx,
+    parse_md,
+    parse_pdf,
+    parse_txt,
+)
 from app.incremental_index import ChunkInput, IngestResult, SQLitePolicyIndex
 from app.policies import load_registry
 from app.policy_catalog import PolicyCatalog
@@ -83,30 +90,88 @@ class PolicyIngestionService:
             for section in sections
         ]
 
-    def replace_pdf(
-        self,
-        path: str | Path,
-        record: dict[str, Any],
-        *,
-        occurred_at: str,
-        tenant_id: str,
-    ) -> PolicySyncResult:
-        """Parse a complete digital PDF then atomically publish its searchable snapshot."""
+    def replace_pdf(self, path, record, *, occurred_at, tenant_id):
         if not tenant_id.strip():
             raise ValueError("tenant_id is required")
-        if not isinstance(record.get("excerpts"), list) or not record["excerpts"]:
-            raise ValueError("policy record must include provenance excerpts")
-        policy_id = record.get("id")
+        if not isinstance(record.get("id"), str) or not record.get("id").strip():
+            raise ValueError("policy record must include the policy id")
+        policy_id = record["id"]
         if not isinstance(policy_id, str) or Path(path).stem not in {policy_id, f"pdf-{policy_id}"}:
             raise ValueError("PDF filename must match policy ID")
         try:
             sections = parse_pdf(path)
-            chunks = self.chunks_for_sections(record, sections)
         except DocumentParseError as error:
             self._catalog.record_file_status(
                 tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
             )
             raise
+        return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
+
+    def replace_docx(self, path, record, *, occurred_at, tenant_id):
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(record.get("id"), str) or not record.get("id").strip():
+            raise ValueError("policy record must include the policy id")
+        policy_id = record["id"]
+        if not isinstance(policy_id, str) or Path(path).stem not in {policy_id, f"pdf-{policy_id}"}:
+            raise ValueError("document filename must match policy ID")
+        try:
+            sections = parse_docx(path)
+        except DocumentParseError as error:
+            self._catalog.record_file_status(
+                tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
+            )
+            raise
+        return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
+
+    def replace_text(self, path, record, *, occurred_at, tenant_id):
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(record.get("id"), str) or not record.get("id").strip():
+            raise ValueError("policy record must include the policy id")
+        policy_id = record["id"]
+        if not isinstance(policy_id, str) or Path(path).stem != policy_id:
+            raise ValueError("text filename must match policy ID")
+        try:
+            sections = parse_txt(path)
+        except DocumentParseError as error:
+            self._catalog.record_file_status(
+                tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
+            )
+            raise
+        return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
+
+    def replace_markdown(self, path, record, *, occurred_at, tenant_id):
+        if not tenant_id.strip():
+            raise ValueError("tenant_id is required")
+        if not isinstance(record.get("id"), str) or not record.get("id").strip():
+            raise ValueError("policy record must include the policy id")
+        policy_id = record["id"]
+        if not isinstance(policy_id, str) or Path(path).stem != policy_id:
+            raise ValueError("markdown filename must match policy ID")
+        try:
+            sections = parse_md(path)
+        except DocumentParseError as error:
+            self._catalog.record_file_status(
+                tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at
+            )
+            raise
+        return self._publish_new_version(path, record, occurred_at=occurred_at, tenant_id=tenant_id, sections=sections)
+
+    def replace_document(self, path, record, *, occurred_at, tenant_id):
+        """Dispatch an upload to the matching format-specific replacement."""
+        suffix = Path(path).suffix.lower()
+        if suffix == ".pdf":
+            return self.replace_pdf(path, record, occurred_at=occurred_at, tenant_id=tenant_id)
+        if suffix == ".docx":
+            return self.replace_docx(path, record, occurred_at=occurred_at, tenant_id=tenant_id)
+        if suffix in (".txt", ".md"):
+            return self.replace_text(path, record, occurred_at=occurred_at, tenant_id=tenant_id) if suffix == ".txt" else self.replace_markdown(path, record, occurred_at=occurred_at, tenant_id=tenant_id)
+        raise ValueError(f"unsupported document format: {suffix or '<empty>'}")
+
+    def _publish_new_version(self, path, record, *, occurred_at, tenant_id, sections):
+        policy_id = record["id"]
+        chunks = self.chunks_for_sections(record, sections)
         try:
             with self._catalog.transaction() as connection:
                 previous = self._catalog.current(policy_id, connection=connection)
@@ -124,7 +189,7 @@ class PolicyIngestionService:
                 complete = {(policy_id, version["version"]) for version in self._catalog.versions(policy_id, connection=connection)}
                 index_result = self._index.ingest_in_transaction(connection, chunks, complete_versions=complete)
                 self._catalog.record_sync_outcomes({policy_id: "added" if added else "changed"}, occurred_at=occurred_at, connection=connection)
-            self._catalog.record_file_status(tenant_id, policy_id, status="indexed", message="digital PDF indexed", occurred_at=occurred_at)
+            self._catalog.record_file_status(tenant_id, policy_id, status="indexed", message="document indexed", occurred_at=occurred_at)
             return PolicySyncResult(added, changed, 0, 0, index_result)
         except (ValueError, OSError) as error:
             self._catalog.record_file_status(tenant_id, policy_id, status="error", message=type(error).__name__, occurred_at=occurred_at)
