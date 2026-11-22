@@ -174,6 +174,48 @@ def create_app(
             require_same_origin=require_same_origin,
             require_csrf=require_csrf,
         )
+
+    # P6 decision-run API (bounded simulated decision + human-in-the-loop
+    # approval). Registered regardless of the policy service: these runs are
+    # local simulation runs, not policy reads.
+    from app.decision_run import DecisionRunRepository
+    from app.decision_run_routes import register_decision_run_routes
+
+    _decision_repository = DecisionRunRepository(
+        Path(__file__).resolve().parents[1] / "var" / "decision.sqlite3"
+    )
+    register_decision_run_routes(
+        app,
+        _decision_repository,
+        current_identity=current_identity,
+        request_session=request_session,
+        require_same_origin=require_same_origin,
+        require_csrf=require_csrf,
+    )
+    app.state.decision_repository = _decision_repository
+
+    if policy_service is not None:
+        from app.evidence_run import EvidenceRunRepository
+        from app.evidence_queue import EvidenceQueue
+        from app.policy_workspace import build_evidence_scope
+        from app.policy_run_routes import register_evidence_run_routes
+
+        evidence_repository = EvidenceRunRepository(policy_service._database)
+        # The async LangGraph evidence run is wired at startup behind an async
+        # SQLite checkpointer (AsyncSqliteSaver); it is created here with a
+        # deferred runner that is assigned on startup, after the event loop is up.
+        evidence_queue = EvidenceQueue(evidence_repository, runner=None)
+        app.state.evidence_repository = evidence_repository
+        app.state.evidence_queue = evidence_queue
+        register_evidence_run_routes(
+            app,
+            policy_service,
+            evidence_queue,
+            current_identity=current_identity,
+            request_session=request_session,
+            require_same_origin=require_same_origin,
+            require_csrf=require_csrf,
+        )
     else:
         evidence_queue = None
         app.state.evidence_queue = None
