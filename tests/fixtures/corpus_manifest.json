@@ -1,0 +1,129 @@
+{
+  "schema_version": "1.0.0",
+  "source": {
+    "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+    "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+    "url": "https://handbook.gitlab.com/handbook/about/",
+    "company": "GitLab",
+    "department": "Support",
+    "media_type": "text/markdown",
+    "retrieval_time": "2026-11-22T09:00:00Z"
+  },
+  "license": {
+    "terms": "CC BY-SA 4.0",
+    "attribution": "© 2026 GitLab, Inc. Adapted under CC BY-SA 4.0.",
+    "notice_file": "docs/corpus/attribution/NOTICE-gitlab-handbook.md"
+  },
+  "rights": {
+    "effective_from": "2026-11-01",
+    "effective_to": null,
+    "allowed_batches": [
+      "handbook/about",
+      "handbook/support",
+      "handbook/security",
+      "handbook/finance"
+    ],
+    "excluded_batches": [
+      "handbook/personal-profiles",
+      "recruiting",
+      "internal-only"
+    ]
+  },
+  "formed_by": [
+    {
+      "representation_id": "gitlab-handbook-about-index",
+      "form": "original",
+      "media_type": "text/markdown",
+      "source": {
+        "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+        "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+        "path": "doc/about/index.md"
+      },
+      "source_hash": "sha256-original-about-index",
+      "normalized_hash": "sha256-normalized-about-index",
+      "effective_from": "2026-11-01",
+      "status": "active"
+    },
+    {
+      "representation_id": "gitlab-handbook-support",
+      "form": "original",
+      "media_type": "text/markdown",
+      "source": {
+        "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+        "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+        "path": "doc/support/index.md"
+      },
+      "source_hash": "sha256-original-support",
+      "normalized_hash": "sha256-normalized-support",
+      "effective_from": "2026-11-01",
+      "status": "active"
+    },
+    {
+      "representation_id": "gitlab-handbook-support-refund-process",
+      "form": "synthetic",
+      "media_type": "text/markdown",
+      "source": {
+        "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+        "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+        "path": "doc/support/refund-process.md"
+      },
+      "source_hash": "sha256-synthetic-refund-process",
+      "normalized_hash": "sha256-normalized-refund-process",
+      "effective_from": "2026-11-01",
+      "status": "active"
+    },
+    {
+      "representation_id": "gitlab-handbook-support-returns",
+      "form": "synthetic",
+      "media_type": "text/markdown",
+      "source": {
+        "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+        "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+        "path": "doc/support/returns.md"
+      },
+      "source_hash": "sha256-synthetic-returns",
+      "normalized_hash": "sha256-normalized-returns",
+      "effective_from": "2026-11-01",
+      "status": "active"
+    },
+    {
+      "representation_id": "gitlab-handbook-support-revoked",
+      "form": "original",
+      "media_type": "text/markdown",
+      "source": {
+        "repository": "https://gitlab.com/gitlab-com/content-sites/handbook.git",
+        "revision": "7f3c9a1e4b2d5f6a7c8d9e0f1a2b3c4d5e6f7a8b",
+        "path": "doc/support/revoked.md"
+      },
+      "source_hash": "sha256-original-revoked",
+      "normalized_hash": "sha256-normalized-revoked",
+      "effective_from": "2026-11-01",
+      "status": "withdrawn"
+    }
+  ],
+  "selections": {
+    "original": 3,
+    "synthetic": 2,
+    "total": 5
+  },
+  "adaptive_variants": [
+    {
+      "variant_id": "synthetic-adaptation-refund-clause",
+      "parent_representation_id": "gitlab-handbook-support-refund-process",
+      "mutation_recipe_version": "1.0.0",
+      "mutation_recipe": "clause-edit",
+      "expected_changed_section_ids": ["refund-eligibility", "amount-limits"],
+      "expected_answers": {"refund_deadline": "14 days"},
+      "label": "synthetic-adaptation-refund-clause"
+    },
+    {
+      "variant_id": "synthetic-adaptation-returns-negation",
+      "parent_representation_id": "gitlab-handbook-support-returns",
+      "mutation_recipe_version": "1.0.0",
+      "mutation_recipe": "negation",
+      "expected_changed_section_ids": ["return-window"],
+      "expected_answers": {"return_window_note": "negated in this variant"},
+      "label": "synthetic-adaptation-returns-negation"
+    }
+  ]
+}
