@@ -46,6 +46,7 @@ class DecisionRunPayload(BaseModel):
     evidence_mode: str = Field(default="freshness_preferred", max_length=32)
     answer_cache: str = Field(default="off", max_length=16)
     idempotency_key: str | None = None
+    command_id: str | None = None
 
 
 class DecisionRunApproveRequest(BaseModel):
@@ -53,6 +54,13 @@ class DecisionRunApproveRequest(BaseModel):
 
     decision: str = Field(min_length=1, max_length=16)
     approver_subject_id: str | None = Field(default=None, max_length=128)
+    command_id: str | None = None
+
+
+class DecisionCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    command_id: str | None = None
 
 
 def _now_iso() -> str:
@@ -153,6 +161,7 @@ def register_decision_run_routes(
             evidence_mode=payload.evidence_mode,
             answer_cache=payload.answer_cache,
             idempotency_key=payload.idempotency_key,
+            command_id=payload.command_id,
             now=_now_iso(),
         )
 
@@ -257,6 +266,33 @@ def register_decision_run_routes(
             headers={"Cache-Control": "no-store"},
         )
 
+    # ------------------------------------------------------------- audit
+    def _get_decision_run_audit(request: Request) -> JSONResponse:
+        run_id = _run_id_from_request(request)
+        row = repository.status(run_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="decision run not found")
+        _default_authorize_run(request, current_identity(request), row["tenant_id"])
+        return JSONResponse(
+            {
+                "run_id": row["run_id"],
+                "events": [
+                    {
+                        "event_type": ev["event_type"],
+                        "occurred_at": ev["occurred_at"],
+                        "actor_subject_id": ev["actor_subject_id"],
+                        "details": {
+                            key: value
+                            for key, value in json.loads(ev["details_json"]).items()
+                            if key not in {"text", "question", "evidence", "query", "details"}
+                        },
+                    }
+                    for ev in repository.events(run_id)
+                ],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     # -------------------------------------------------------------- approve
     async def _approve_decision_run(
         request: Request,
@@ -332,6 +368,7 @@ def register_decision_run_routes(
                     run_id=run_id,
                     decision=payload.decision,
                     actor_subject_id=identity.subject_id,
+                    command_id=payload.command_id,
                     occurred_at=_now_iso(),
                 )
                 return JSONResponse(
@@ -376,7 +413,7 @@ def register_decision_run_routes(
             ) from error
 
     # -------------------------------------------------------------- cancel
-    def _cancel_decision_run(request: Request) -> JSONResponse:
+    def _cancel_decision_run(request: Request, payload: DecisionCancelRequest) -> JSONResponse:
         run_id = _run_id_from_request(request)
         identity = current_identity(request)
         row = repository.status(run_id)
@@ -387,6 +424,7 @@ def register_decision_run_routes(
         repository.cancel_run(
             run_id=run_id,
             actor_subject_id=identity.subject_id,
+            command_id=payload.command_id,
             occurred_at=_now_iso(),
         )
         return JSONResponse(
@@ -412,6 +450,10 @@ def register_decision_run_routes(
     def decision_run_get(request: Request) -> JSONResponse:
         return _get_decision_run(request)
 
+    @app.get("/api/decision-runs/{run_id}/audit", response_class=JSONResponse)
+    def decision_run_audit(request: Request) -> JSONResponse:
+        return _get_decision_run_audit(request)
+
     @app.post("/api/decision-runs/{run_id}/approve", response_class=JSONResponse)
     async def decision_run_approve(
         request: Request,
@@ -421,8 +463,12 @@ def register_decision_run_routes(
         return await _approve_decision_run(request, payload, x_csrf_token)
 
     @app.post("/api/decision-runs/{run_id}/cancel", response_class=JSONResponse)
-    async def decision_run_cancel(request: Request) -> JSONResponse:
-        return _cancel_decision_run(request)
+    async def decision_run_cancel(
+        request: Request,
+        payload: DecisionCancelRequest,
+        x_csrf_token: Annotated[str | None, Header()] = None,
+    ) -> JSONResponse:
+        return _cancel_decision_run(request, payload)
 
     @app.get("/api/decision-runs", response_class=JSONResponse)
     def decision_run_list(request: Request) -> JSONResponse:

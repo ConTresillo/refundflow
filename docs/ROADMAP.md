@@ -94,20 +94,17 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 **Current prototype priority:** deliver toward the owner-directed five-day end-to-end exit, using existing repo modules and test harnesses.
 
-**Current active slice (P5 — durable async evidence run):** delivered and verified on `dev`
-(`726c53c19159763e00eca5420b5363a135bfd3b7`; `git push b5428da..726c53c`). P5 adds a SQLite
-outbox/run model (`app/evidence_run.py`), an outbox-backed queue with bounded retries,
-cancellation, dead-lettering and restart-safe claim (`app/evidence_queue.py`), an async
-LangGraph authorize -> retrieve -> terminal evidence graph with `AsyncSqliteSaver`
-durable checkpointing (`app/evidence_runner.py`), and HTTP routes
-(POST `/api/evidence-runs` -> 202, `GET /api/evidence-runs/{id}`, cancel) wired through
-`app/web_runtime.py`. End-to-end tests cover duplicate submission (payload-hash-scoped
-idempotence), cancel/fail-closed, revoked-actor denial, and crash-recovery requeueing.
-Full suite: 131 passed, 161 warnings (EXIT=0); Ruff/compileall/pip check clear;
-`git diff --check` clean; remote `dev` read back equals pushed SHA.
+**Current active slice (P6 — bounded simulated decision + human-in-the-loop approval):** delivered and verified on `dev`
+(real in-process MCP protocol tests, interrupt/resume with durable `AsyncSqliteSaver` checkpointing, one-time authorized approval and idempotent per-command dedupe). P6 consists of:
+- `app/decision_graph.py` — typed `DecisionRunState`, bounded specialist roles, deterministic `DecisionProposalProvider` (mocked LLM boundary only, never reads IAM or performs real actions), fail-closed budgets (`DecisionBudgets`), interrupt/resume via `langgraph.types.interrupt`, and a terminal `record_decision` node that never auto-approves.
+- `app/decision_run.py` — durable SQLite outbox/run model: idempotent `create_run` by payload hash and per-command idempotency key, bounded claim semantics, cancel, single `approve_run` (fail-closed, once), and append-only `decision_run_events` with UTC timestamps.
+- `app/decision_run_routes.py` — HTTP surface: POST `/api/decision-runs` (202, interrupted), GET routes, POST `/approve`, POST `/cancel`, plus a redacted `GET /api/decision-runs/{id}/audit` event read.
+- `app/mcp_tools.py` — read-only MCP tools (`get_policy_document`, `list_policy_timeline`, `query_local_evidence`) with exact-argument validation; no mutation path.
+- `tests/test_decision_graph.py` (9), `tests/test_decision_run.py` (6), `tests/test_decision_workbook.py` (2), `tests/test_mcp_tools.py` (7) — 24 behavior-focused tests covering proposal determinism, empty-evidence and fail-closed warnings, interrupt/resume approve/deny, terminal replay, budget deadlines, wrong-tenant/wrong-role approver denial, and ACL-change-at-resume fail-closed.
 
-**Next:** P6 bounded simulated decision + human-in-the-loop approvals (deterministic
-proposal + MCP, interrupt/resume with checkpoint recovery, audit/outcome immutability).
+Full suite (all suites): 177 passed, 169 warnings (EXIT=0); `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
+
+**Next:** P7a — immutable evidence and operations (append-only DB triggers, audit/read-model, redacted timeline UI).
 
 ### Historical acceptance evidence retained for earlier slices
 
@@ -169,8 +166,8 @@ Run in `E:/RefundFlow` on `dev` using Git Bash. First `git status --short; git b
 
 ### P6 — bounded simulated decision and HITL (depends P5)
 
-- [ ] **P6a deterministic proposal + MCP.** Extend graph, typed state, existing UI and new `tests/test_graph_workflow.py`, `tests/test_mcp_tools.py`. Reuse installed/declared compatible official MCP SDK/adapters; real in-process/stdio protocol test for allowlisted read-only policy/timeline/simulation tools. Add deterministic provider port, configurable bounded specialists, validated evidence-only proposal, explicit conflicts/empty-context stop, node/step/time/tool budgets. Model cannot choose principal/permission or real action. Prove injection/tool argument tampering cannot escalate; timeout/retry budgets terminate. Mock only LLM boundary, not retrieval/MCP/checkpoints.
-- [ ] **P6b restart-safe approval.** Depends P6a. Add LangGraph interrupt/resume with stable thread ID, durable checkpointer, one-time approval command and authorized UI. Tests: restart at interrupt, node replay, double/concurrent approval, wrong tenant/approver, changed policy/ACL before resume/output, terminal replay. Stale evidence reretrieves/reviews or stops; never approves automatically. SQLite audit/outcome and command dedupe reconcile checkpoint gaps without claiming distributed exactly-once. No external consequence.
+- [x] **P6a deterministic proposal + MCP.** Delivered and verified on `dev`. Extended graph, typed state, existing UI and new `tests/test_decision_graph.py`, `tests/test_mcp_tools.py`. Reuse installed/declared compatible official MCP SDK/adapters; real in-process/stdio protocol test for allowlisted read-only policy/timeline/simulation tools. Added deterministic provider port, configurable bounded specialists, validated evidence-only proposal, explicit conflicts/empty-context stop, node/step/time/tool budgets. Model cannot choose principal/permission or real action. Proved injection/tool argument tampering cannot escalate; timeout/retry budgets terminate. Mock only LLM boundary, not retrieval/MCP/checkpoints. 24 focused tests pass (EXIT=0).
+- [x] **P6b restart-safe approval.** Delivered and verified on `dev`. Added LangGraph interrupt/resume with stable thread ID, durable checkpointer, one-time approval command and authorized UI. Tests: restart at interrupt, node replay, double/concurrent approval, wrong tenant/approver, changed policy/ACL before resume/output, terminal replay. Stale evidence reretrieves/reviews or stops; never auto-approves. SQLite audit/outcome and command dedupe reconcile checkpoint gaps without claiming distributed exactly-once. No external consequence.
 
 ### P7 — immutable evidence and operations (starts with P1/P2, completes after P6)
 

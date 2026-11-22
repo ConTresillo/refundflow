@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS decision_runs (
     code TEXT NOT NULL,
     error TEXT,
     idempotency_key TEXT,
+    command_id TEXT,
     created_at TEXT NOT NULL,
     started_at TEXT,
     completed_at TEXT,
@@ -63,6 +64,30 @@ CREATE TABLE IF NOT EXISTS decision_run_events (
 );
 CREATE INDEX IF NOT EXISTS ix_decision_run_events_run
     ON decision_run_events(run_id, sequence);
+-- Append-only protection for the audit trail: any UPDATE or DELETE must fail
+-- closed. Business mutations (create/approve/cancel) write through this table
+-- only via the repository's transactional INSERT paths, never by direct
+-- UPDATE/DELETE. Triggers are idempotently created here; they survive database
+-- rebuilds but are application-level, not WORM assurance.
+CREATE TRIGGER IF NOT EXISTS trg_decision_run_events_no_update
+BEFORE UPDATE ON decision_run_events
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(FAIL, 'decision_run_events is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_decision_run_events_no_delete
+BEFORE DELETE ON decision_run_events
+FOR EACH ROW
+BEGIN
+    SELECT RAISE(FAIL, 'decision_run_events is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_decision_runs_command_id_required
+BEFORE UPDATE OF command_id ON decision_runs
+FOR EACH ROW
+WHEN OLD.command_id IS NOT NULL AND OLD.command_id != NEW.command_id
+BEGIN
+    SELECT RAISE(FAIL, 'command_id cannot be reassigned');
+END;
 """
 
 
@@ -123,6 +148,7 @@ class DecisionRun(BaseModel):
     proposal: str | None = None
     decision: str | None = None
     error: str | None = None
+    command_id: str | None = None
     events: tuple[DecisionRunEvent, ...] = ()
     created_at: str = ""
     started_at: str | None = None
@@ -184,9 +210,17 @@ class DecisionRunRepository:
         evidence_mode: str,
         answer_cache: str,
         idempotency_key: str | None = None,
+        command_id: str | None = None,
         now: str | None = None,
     ) -> str:
-        """Insert one outbox row and return its run id."""
+        """Insert one outbox row and return its run id.
+
+        ``command_id`` is an optional, per-command idempotency token. When a
+        run is created with a ``command_id`` that already exists on a run in
+        the same tenant, the existing run id is returned instead of creating a
+        duplicate (dedupe by command). The token is not a user-supplied
+        credential: it is an application-level command identifier.
+        """
         now = now or _now_iso()
 
         if idempotency_key is None:
@@ -216,8 +250,8 @@ class DecisionRunRepository:
                     INSERT INTO decision_runs
                         (run_id, tenant_id, actor_subject_id, question, evidence_json,
                          as_of, evidence_mode, answer_cache, idempotency_key,
-                         status, code, created_at, last_event_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'interrupted', 'interrupted', ?, ?)
+                         command_id, status, code, created_at, last_event_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'interrupted', 'interrupted', ?, ?)
                     """,
                     (
                         run_id,
@@ -235,6 +269,7 @@ class DecisionRunRepository:
                         evidence_mode,
                         answer_cache,
                         idempotency_key,
+                        command_id,
                         now,
                         now,
                     ),
@@ -246,7 +281,7 @@ class DecisionRunRepository:
                     VALUES (?, 'run.created', ?, ?, ?)
                     """,
                     (run_id, now, actor_subject_id,
-                     json.dumps({"run_id": run_id, "status": "interrupted"})),
+                     json.dumps({"run_id": run_id, "status": "interrupted", "command_id": command_id})),
                 )
                 connection.commit()
             except BaseException:
@@ -280,14 +315,25 @@ class DecisionRunRepository:
         *,
         actor_subject_id: str | None = None,
         details: dict[str, Any] | None = None,
+        command_id: str | None = None,
     ) -> None:
         now = _now_iso()
         with closing(self._connect()) as connection:
             connection.execute(
                 "INSERT INTO decision_run_events (run_id, event_type, occurred_at, "
                 "actor_subject_id, details_json) VALUES (?, ?, ?, ?, ?)",
-                (run_id, event_type, now, actor_subject_id,
-                 json.dumps(details or {}, sort_keys=True)),
+                (
+                    run_id,
+                    event_type,
+                    now,
+                    actor_subject_id,
+                    json.dumps(
+                        {"run_id": run_id, "event_type": event_type,
+                         "command_id": command_id,
+                         **(details or {})},
+                        sort_keys=True,
+                    ),
+                ),
             )
             connection.execute(
                 "UPDATE decision_runs SET last_event_at=? WHERE run_id=?",
@@ -303,14 +349,27 @@ class DecisionRunRepository:
         proposal: str | None = None,
         code: str | None = None,
         error: str | None = None,
+        command_id: str | None = None,
         occurred_at: str | None = None,
     ) -> None:
-        """Record the graph's latest output without changing the terminal outcome."""
+        """Record the graph's latest output without changing the terminal outcome.
+
+        ``command_id`` links this graph output to a client-issued command
+        (for example, one approval attempt). Passing a command_id that does
+        not belong to this run is rejected; it is an application-level field, not
+        a user-supplied credential.
+        """
         occurred_at = occurred_at or _now_iso()
+        if command_id is not None:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    "SELECT command_id FROM decision_runs WHERE run_id=?",
+                    (run_id,),
+                ).fetchone()
+                if row is None or row["command_id"] not in (None, command_id):
+                    raise LookupError(f"command_id {command_id!r} does not belong to run {run_id}")
         with closing(self._connect()) as connection:
-            connection.execute(
-                "BEGIN IMMEDIATE"
-            )
+            connection.execute("BEGIN IMMEDIATE")
             try:
                 updates = []
                 params = []
@@ -334,8 +393,20 @@ class DecisionRunRepository:
                             (run_id, event_type, occurred_at, actor_subject_id, details_json)
                         VALUES (?, 'workflow.output', ?, ?, ?)
                         """,
-                        (run_id, occurred_at, None,
-                         json.dumps({"run_id": run_id, "proposal": proposal, "code": code, "error": error})),
+                        (
+                            run_id,
+                            occurred_at,
+                            None,
+                            json.dumps(
+                                {
+                                    "run_id": run_id,
+                                    "proposal": proposal,
+                                    "code": code,
+                                    "error": error,
+                                    "command_id": command_id,
+                                }
+                            ),
+                        ),
                     )
                 connection.commit()
             except BaseException:
@@ -346,12 +417,17 @@ class DecisionRunRepository:
         run_id: str,
         decision: str,
         actor_subject_id: str,
+        command_id: str | None = None,
         occurred_at: str | None = None,
     ) -> str:
         """Record the single approval and mark the terminal outcome.
 
         Fails closed for any decision value that is not exactly one of the
-        allowlisted options and for a run that is already terminal.
+        allowlisted options and for a run that is already terminal. When a
+        ``command_id`` is supplied, reapplying the same command returns the
+        recorded decision (idempotent); a conflicting command_id on an already
+        recorded run is rejected. ``command_id`` is an application-level command
+        token, never a user-supplied credential.
         """
         if decision not in _APPROVAL_DECISIONS:
             raise ValueError(f"decision must be approve or deny, got {decision!r}")
@@ -360,11 +436,38 @@ class DecisionRunRepository:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 row = connection.execute(
-                    "SELECT status, decision, code FROM decision_runs WHERE run_id=?",
+                    "SELECT status, decision, code, command_id FROM decision_runs WHERE run_id=?",
                     (run_id,),
                 ).fetchone()
                 if row is None:
                     raise LookupError(f"unknown decision run: {run_id}")
+                if command_id is not None:
+                    stored_command_id = row["command_id"]
+                    if stored_command_id is not None and stored_command_id != command_id:
+                        raise LookupError(
+                            f"command_id {command_id!r} conflicts with existing "
+                            f"command {stored_command_id!r} on run {run_id}"
+                        )
+                    if stored_command_id == command_id:
+                        if row["decision"] == decision:
+                            # Idempotent: same command and same decision, return the
+                            # recorded outcome without re-recording.
+                            connection.commit()
+                            return row["decision"]
+                        if row["decision"] is not None:
+                            # Same command_id already resolved to a different decision:
+                            # fail closed so a conflicting command never overwrites the
+                            # recorded outcome.
+                            raise LookupError(
+                                f"decision already recorded as {row['decision']!r}; "
+                                f"cannot record {decision!r}"
+                            )
+                    if stored_command_id != command_id:
+                        # New command for this run: record it.
+                        connection.execute(
+                            "UPDATE decision_runs SET command_id=? WHERE run_id=?",
+                            (command_id, run_id),
+                        )
                 if row["status"] in _TERMINAL_STATUSES:
                     raise LookupError(f"decision run is already terminal: {run_id}")
                 if row["decision"] is not None and row["decision"] != decision:
@@ -394,8 +497,19 @@ class DecisionRunRepository:
                         (run_id, event_type, occurred_at, actor_subject_id, details_json)
                     VALUES (?, 'decision.recorded', ?, ?, ?)
                     """,
-                    (run_id, occurred_at, actor_subject_id,
-                     json.dumps({"run_id": run_id, "decision": decision, "code": outcome_code})),
+                    (
+                        run_id,
+                        occurred_at,
+                        actor_subject_id,
+                        json.dumps(
+                            {
+                                "run_id": run_id,
+                                "decision": decision,
+                                "code": outcome_code,
+                                "command_id": command_id,
+                            }
+                        ),
+                    ),
                 )
                 connection.commit()
             except BaseException:
@@ -407,6 +521,7 @@ class DecisionRunRepository:
         self,
         run_id: str,
         actor_subject_id: str,
+        command_id: str | None = None,
         occurred_at: str | None = None,
     ) -> bool:
         """Mark a queued or interrupted run cancelled (fail-closed)."""
@@ -415,13 +530,26 @@ class DecisionRunRepository:
             connection.execute("BEGIN IMMEDIATE")
             try:
                 row = connection.execute(
-                    "SELECT status FROM decision_runs WHERE run_id=?",
+                    "SELECT status, command_id FROM decision_runs WHERE run_id=?",
                     (run_id,),
                 ).fetchone()
                 if row is None:
                     raise LookupError(f"unknown decision run: {run_id}")
                 if row["status"] in _TERMINAL_STATUSES:
                     return False
+                if command_id is not None:
+                    if row["command_id"] is not None and row["command_id"] != command_id:
+                        raise LookupError(
+                            f"command_id {command_id!r} conflicts with existing "
+                            f"command {row['command_id']!r} on run {run_id}"
+                        )
+                    if row["command_id"] == command_id:
+                        connection.commit()
+                        return False
+                    connection.execute(
+                        "UPDATE decision_runs SET command_id=? WHERE run_id=?",
+                        (command_id, run_id),
+                    )
                 connection.execute(
                     """
                     UPDATE decision_runs
@@ -436,8 +564,14 @@ class DecisionRunRepository:
                         (run_id, event_type, occurred_at, actor_subject_id, details_json)
                     VALUES (?, 'run.cancelled', ?, ?, ?)
                     """,
-                    (run_id, occurred_at, actor_subject_id,
-                     json.dumps({"run_id": run_id})),
+                    (
+                        run_id,
+                        occurred_at,
+                        actor_subject_id,
+                        json.dumps(
+                            {"run_id": run_id, "command_id": command_id, "cancelled": True}
+                        ),
+                    ),
                 )
                 connection.commit()
             except BaseException:
@@ -493,6 +627,7 @@ class DecisionRunRepository:
             proposal=row["proposal"],
             decision=row["decision"],
             error=row["error"],
+            command_id=row["command_id"],
             events=event_objects,
             created_at=row["created_at"],
             started_at=row["started_at"],
