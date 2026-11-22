@@ -48,16 +48,116 @@ main{min-width:0}.topbar{height:68px;background:#ffffffc9;border-bottom:1px soli
 #status{min-height:20px;margin:0 0 12px;color:#697184;font-size:12px}#results{display:grid;gap:11px}.evidence-card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:17px 19px;box-shadow:0 4px 16px #24304a06}.evidence-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.source-name{font-size:14px;font-weight:700}.version{display:block;font-size:11px;color:var(--muted);margin-top:3px}.citation{font:11px ui-monospace,SFMono-Regular,Menlo,monospace;color:#6457a3;background:#f3f0ff;border-radius:6px;padding:5px 7px;white-space:nowrap}.evidence-text{margin:13px 0 0;color:#424b5e;line-height:1.65;font-size:13px}.empty{border:1px dashed #d5d7df;border-radius:12px;background:#ffffff9c;padding:21px;color:#777f90;font-size:13px}.empty strong{color:#424b5e;display:block;margin-bottom:4px}.footer-note{margin-top:28px;border-top:1px solid var(--line);padding-top:15px;color:#8a90a0;font-size:11px;display:flex;justify-content:space-between;gap:14px}
 @media(max-width:760px){.shell{grid-template-columns:66px minmax(0,1fr)}aside{padding:18px 8px}.brand{padding:0 8px 22px}.brand-word,.workspace,.nav-label,.nav-text,.aside-bottom{display:none}.nav a{justify-content:center;padding:12px 0}.nav .ico{font-size:16px}.topbar{height:58px;padding:0 17px}.content{padding:30px 17px 50px}.intro{display:block}.mode-badge{display:inline-block;margin-top:16px}.intro h1{font-size:29px}.form-bottom{align-items:stretch;flex-direction:column}.scope{width:100%}.primary{width:100%}.section-head{align-items:flex-start;flex-direction:column}.footer-note{flex-direction:column}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;scroll-behavior:auto!important}}
+
+.search-tools{display:flex;gap:10px;align-items:center}.search-tools label{font-size:12px;font-weight:650;color:var(--muted)}
+.search-tools select{width:auto;padding:10px 12px;border:1px solid #d9dce5;border-radius:8px;background:white;color:var(--ink);outline:none}
+.freshness{font-size:10px;color:var(--mint);background:#f2faf5;border-radius:6px;padding:3px 7px;font-weight:600}
 </style></head>
 <body><div class="shell"><aside><a class="brand" href="/"><span class="mark">↗</span><span class="brand-word">RefundFlow</span></a><div class="workspace"><small>Demo workspace</small><strong>__TENANT_NAME__</strong></div><span class="nav-label">Workspace</span><nav class="nav" aria-label="Workspace"><a class="active" href="/evidence" aria-current="page"><span class="ico">⌕</span><span class="nav-text">Policy desk</span></a><a href="/policies"><span class="ico">▤</span><span class="nav-text">Policy library</span></a><a href="/"><span class="ico">◉</span><span class="nav-text">Identity profile</span></a></nav><div class="aside-bottom"><span class="demo-dot"></span>Local simulation · no live refunds</div></aside>
 <main><header class="topbar"><div class="crumb">Refund operations <span aria-hidden="true">/</span> <strong>Policy desk</strong></div><div class="profile"><span class="avatar" aria-hidden="true">RF</span>__IDENTITY_NAME__</div></header><div class="content"><div class="eyebrow">Evidence Explorer · Refund support</div><div class="intro"><div><h1>Find the policy behind the answer.</h1><p>Check a customer scenario against the policy evidence your signed-in identity is allowed to see.</p></div><span class="mode-badge">Permission-checked search</span></div>
-<div class="search-card"><label for="query">Customer scenario or policy question</label><div class="query-wrap"><span class="spark" aria-hidden="true">✳</span><input id="query" maxlength="300" placeholder="e.g. The customer lost their receipt — can we still refund?" autocomplete="off"></div><div class="form-bottom"><div class="scope"><label for="department">Department scope</label><input id="department" list="department-options" value="billing" maxlength="64"><datalist id="department-options"><option value="support"><option value="billing"><option value="shipping"><option value="risk"></datalist><div class="scope-note">Search stays within this department and your document grants.</div></div><button id="search" class="primary">Find policy evidence <span aria-hidden="true">→</span></button></div><p class="search-hint">Try “refund receipt” or “damaged item” to explore the synthetic demo policies.</p></div>
+<div class="search-card"><label for="query">Customer scenario or policy question</label><div class="query-wrap"><span class="spark" aria-hidden="true">✳</span><input id="query" maxlength="300" placeholder="e.g. The customer lost their receipt — can we still refund?" autocomplete="off"></div><div class="form-bottom"><div class="scope"><label for="department">Department scope</label><input id="department" list="department-options" value="billing" maxlength="64"><datalist id="department-options"><option value="support"><option value="billing"><option value="shipping"><option value="risk"></datalist><div class="scope-note">Search stays within this department and your document grants.</div></div><div class="search-tools"><label for="freshness">Freshness</label><select id="freshness"><option value="freshness_preferred">Fresh (authoritative)</option><option value="ttl_snapshot">Fresh snapshot (cached for 5m)</option><option value="critical">Fresh RAG (always uncached)</option></select><button id="fresh-rag" class="primary" disabled>Fresh RAG · always uncached</button></div><button id="search" class="primary">Find policy evidence <span aria-hidden="true">→</span></button></div><p class="search-hint">Try “refund receipt” or “damaged item” to explore the synthetic demo policies.</p></div>
 <p class="disclaimer"><span aria-hidden="true">ⓘ</span><span><strong>Evidence-only prototype.</strong> Search is real, local lexical retrieval with citations. It does not generate a refund decision, contact a customer, or move money.</span></p>
 <div class="section-head"><div><h2>Policy evidence</h2><p>Sources are scoped to your current demo identity.</p></div><span class="trust-chip">Lexical retrieval · no AI-generated answer</span></div><p id="status" role="status" aria-live="polite">Enter a scenario to see permitted evidence and source citations.</p><section id="results" aria-live="polite"><div class="empty"><strong>Your evidence will appear here.</strong>Run a policy search to inspect matching clauses, versions, and citations.</div></section><div class="footer-note"><span>RefundFlow local prototype</span><span>Development identity is simulated · loopback only</span></div></div></main></div><script>
-const csrf=document.querySelector('meta[name="csrf-token"]').content;const statusNode=document.getElementById('status');const resultsNode=document.getElementById('results');const searchButton=document.getElementById('search');
-async function searchEvidence(){resultsNode.replaceChildren();const query=document.getElementById('query').value.trim();const department=document.getElementById('department').value.trim();if(!query||!department){statusNode.textContent='Enter a question and department to search.';return;}searchButton.disabled=true;statusNode.textContent='Checking permitted policy evidence…';try{const params=new URLSearchParams({department_id:department,query,as_of:new Date().toISOString().slice(0,10),top_k:'5'});const response=await fetch('/api/policy-search?'+params,{credentials:'same-origin',headers:{'X-CSRF-Token':csrf}});const body=await response.json();if(!response.ok)throw new Error(body.detail||'Search failed');if(body.length===0){statusNode.textContent='No authorized evidence found for this query.';const empty=document.createElement('div');empty.className='empty';const title=document.createElement('strong');title.textContent='No matching evidence';const detail=document.createElement('span');detail.textContent='Try another phrase or check that this identity has access to the selected department.';empty.append(title,detail);resultsNode.append(empty);return;}statusNode.textContent=`${body.length} authorized evidence item${body.length===1?'':'s'} found.`;for(const item of body){const article=document.createElement('article');article.className='evidence-card';const head=document.createElement('div');head.className='evidence-head';const source=document.createElement('div');const name=document.createElement('div');name.className='source-name';name.textContent=item.source_name;const meta=document.createElement('span');meta.className='version';meta.textContent=`Version ${item.version} · effective ${item.effective_from}${item.effective_to?' to '+item.effective_to:''}`;source.append(name,meta);const citation=document.createElement('span');citation.className='citation';citation.textContent=item.citation;head.append(source,citation);const text=document.createElement('p');text.className='evidence-text';text.textContent=item.text;article.append(head,text);resultsNode.append(article);}}catch(error){statusNode.textContent=error.message||'Search unavailable.';const empty=document.createElement('div');empty.className='empty';empty.textContent='Search could not be completed. Check the local service and try again.';resultsNode.append(empty);}finally{searchButton.disabled=false;}}
-searchButton.addEventListener('click',searchEvidence);document.getElementById('query').addEventListener('keydown',event=>{if(event.key==='Enter')searchEvidence();});
+const csrf = document.querySelector('meta[name="csrf-token"]').content;
+const statusNode = document.getElementById('status');
+const resultsNode = document.getElementById('results');
+const searchButton = document.getElementById('search');
+const freshnessSelect = document.getElementById('freshness');
+const freshRagButton = document.getElementById('fresh-rag');
+let currentMode = 'freshness_preferred';
+
+async function searchEvidence(mode) {
+  const mode = mode || currentMode;
+  resultsNode.replaceChildren();
+  const query = document.getElementById('query').value.trim();
+  const department = document.getElementById('department').value.trim();
+  if (!query || !department) {
+    statusNode.textContent = 'Enter a question and department to search.';
+    return;
+  }
+  searchButton.disabled = true;
+  freshRagButton.disabled = true;
+  statusNode.textContent = 'Checking permitted policy evidence…';
+  try {
+    const params = new URLSearchParams({
+      department_id: department,
+      query,
+      as_of: new Date().toISOString().slice(0, 10),
+      top_k: '5',
+      evidence_mode: mode,
+      answer_cache: 'off'
+    });
+    const response = await fetch('/api/policy-search?' + params, {
+      credentials:'same-origin',
+      headers: {'X-CSRF-Token': csrf}
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.detail || 'Search failed');
+    if (body.length === 0) {
+      statusNode.textContent = 'No authorized evidence found for this query.';
+      const empty = document.createElement('div');
+      empty.className = 'empty';
+      const title = document.createElement('strong');
+      title.textContent = 'No matching evidence';
+      const detail = document.createElement('span');
+      detail.textContent = 'Try another phrase or check that this identity has access to the selected department.';
+      empty.append(title, detail);
+      resultsNode.append(empty);
+      return;
+    }
+    statusNode.textContent = `${body.length} authorized evidence item${body.length === 1 ? '' : 's'} found.`;
+    for (const item of body) {
+      const article = document.createElement('article');
+      article.className = 'evidence-card';
+      const head = document.createElement('div');
+      head.className = 'evidence-head';
+      const source = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'source-name';
+      name.textContent = item.source_name;
+      const meta = document.createElement('span');
+      meta.className = 'version';
+      meta.textContent = `Version ${item.version} · effective ${item.effective_from}${item.effective_to ? ' to ' + item.effective_to : ''}`;
+      const freshness = document.createElement('span');
+      freshness.className = 'freshness';
+      freshness.textContent = `[${item.cache_status || 'off'}] ${item.freshness_state || ''}`;
+      source.append(name, meta, freshness);
+      const citation = document.createElement('span');
+      citation.className = 'citation';
+      citation.textContent = item.citation;
+      head.append(source, citation);
+      const text = document.createElement('p');
+      text.className = 'evidence-text';
+      text.textContent = item.text;
+      article.append(head, text);
+      resultsNode.append(article);
+    }
+  } catch (error) {
+    statusNode.textContent = error.message || 'Search unavailable.';
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = 'Search could not be completed. Check the local service and try again.';
+    resultsNode.append(empty);
+  } finally {
+    searchButton.disabled = false;
+    freshRagButton.disabled = false;
+  }
+}
+
+searchButton.addEventListener('click', function () { searchEvidence(); });
+document.getElementById('query').addEventListener('keydown', function (event) {
+  if (event.key === 'Enter') searchEvidence();
+});
+freshRagButton.addEventListener('click', function () { searchEvidence('critical'); });
+freshnessSelect.addEventListener('change', function () {
+  currentMode = freshnessSelect.value;
+  freshRagButton.disabled = false;
+});
 </script></body></html>"""
+
+"""
+
+"""
 
 
 POLICY_LAB_HTML = r"""<!doctype html>
@@ -437,6 +537,8 @@ def register_policy_routes(
         request: Request,
         query: Annotated[str, Query(min_length=1, max_length=300)],
         as_of: Annotated[str, Query(min_length=10, max_length=10)],
+        evidence_mode: str = "freshness_preferred",
+        answer_cache: str = "off",
         department_id: str | None = None,
         policy_id: str | None = None,
         top_k: Annotated[int, Query(ge=1, le=10)] = 5,
@@ -455,8 +557,15 @@ def register_policy_routes(
             raise HTTPException(status_code=422, detail="department_id is required for cross-policy search")
         try:
             results = service.search_for_identity(
-                identity.subject_id, identity.tenant_id,
-                query, department_id=department_id, policy_id=policy_id, as_of=as_of, top_k=top_k,
+                identity.subject_id,
+                identity.tenant_id,
+                query,
+                department_id=department_id,
+                policy_id=policy_id,
+                as_of=as_of,
+                top_k=top_k,
+                evidence_mode=evidence_mode,
+                answer_cache=answer_cache,
             )
         except PolicyChangeError as error:
             raise service_error(error) from error

@@ -633,8 +633,17 @@ class PolicyChangeService:
         return results
 
     def search_for_identity(
-        self, subject_id: str, tenant_id: str, query: str, *,
-        department_id: str, policy_id: str | None = None, as_of: str, top_k: int = 5,
+        self,
+        subject_id: str,
+        tenant_id: str,
+        query: str,
+        *,
+        department_id: str,
+        policy_id: str | None = None,
+        as_of: str,
+        top_k: int = 5,
+        evidence_mode: str = "freshness_preferred",
+        answer_cache: str = "off",
     ) -> list[dict[str, Any]]:
         """Recheck live document grants before returning scoped evidence."""
         from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
@@ -686,10 +695,18 @@ class PolicyChangeService:
         if current_principal_revision != revision or current_document_revision != document_revision:
             return []
         results = self.search(
-            query, department_id=department_id, policy_id=policy_id, as_of=as_of, top_k=top_k,
+            query,
+            department_id=department_id,
+            policy_id=policy_id,
+            as_of=as_of,
+            top_k=top_k,
             allowed_policy_ids=allowed_policy_ids,
-            authorization_revision=revision, document_revision=document_revision,
-            tenant_id=tenant_id, subject_id=subject_id,
+            evidence_mode=evidence_mode,
+            answer_cache=answer_cache,
+            authorization_revision=revision,
+            document_revision=document_revision,
+            tenant_id=tenant_id,
+            subject_id=subject_id,
         )
         current_principal_revision, _ = store.authorization_principal_snapshot()
         current_document_revision, _ = store.authorization_document_snapshot()
@@ -724,6 +741,8 @@ class PolicyChangeService:
         as_of: str,
         top_k: int = 5,
         allowed_policy_ids: set[str] | None = None,
+        evidence_mode: str = "freshness_preferred",
+        answer_cache: str = "off",
         authorization_revision: int | None = None,
         document_revision: int | None = None,
         tenant_id: str | None = None,
@@ -752,6 +771,8 @@ class PolicyChangeService:
             as_of=as_of,
             allowed_policy_ids=allowed_policy_ids,
             top_k=min(max(int(top_k), 1), 10),
+            evidence_mode=evidence_mode,
+            answer_cache=answer_cache,
         )
         if (
             authorization_revision is not None
