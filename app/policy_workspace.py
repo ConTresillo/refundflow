@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Callable
 
 from app.incremental_index import SQLitePolicyIndex
 from app.policy_catalog import PolicyCatalog
@@ -83,3 +85,58 @@ def create_local_policy_service(
     service = PolicyChangeService(source_dir, catalog, index)
     service.initialize_empty_database()
     return service
+
+
+def build_evidence_scope(policy_change_service: PolicyChangeService) -> Callable[..., set[str]]:
+    """Fail-closed evidence scope: what the actor may read, per tenant.
+
+    Mirrors the synchronous endpoints' grant logic (tenant-qualified PyCasbin
+    plus document-read grants over non-colliding tenant policies). Returns the
+    allowed policy IDs for the run; an empty result makes the graph deny the
+    run without touching retrieval.
+    """
+    from app.iam import AccessRequest, CasbinAuthorizationAdapter, Role
+    from app.iam_store import SQLiteIAMStore
+
+    iam_store = SQLiteIAMStore(policy_change_service._database)
+
+    def scope(*, tenant_id: str, actor_subject_id: str | None, departments: tuple[str, ...]) -> set[str]:
+        if not tenant_id or not actor_subject_id:
+            return set()
+        principal = iam_store.get_principal(actor_subject_id)
+        if principal is None:
+            return set()
+        _revision, documents = iam_store.authorization_document_snapshot()
+        tenant_documents = {document.id: document for document in documents if document.tenant_id == tenant_id}
+        if not tenant_documents:
+            return set()
+        tenant_owners: dict[str, set[str]] = {}
+        for document in documents:
+            tenant_owners.setdefault(document.id, set()).add(document.tenant_id)
+        colliding = {document_id for document_id, owners in tenant_owners.items() if len(owners) > 1}
+        roles = tuple(
+            Role(
+                id=role,
+                tenant_id=tenant_id,
+                permissions=iam_store.list_role_permissions(tenant_id, role),
+            )
+            for role in iam_store.list_roles(tenant_id)
+        )
+        adapter = CasbinAuthorizationAdapter(
+            roles,
+            principals=(principal,),
+            documents=tuple(tenant_documents.values()),
+        )
+        allowed = set()
+        for document_id, document in tenant_documents.items():
+            if document_id in colliding:
+                continue
+            if adapter.authorize(
+                principal,
+                document,
+                AccessRequest(action="document.read", scope=document.scope, category=document.category),
+            ):
+                allowed.add(document_id)
+        return allowed
+
+    return scope

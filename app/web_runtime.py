@@ -2,8 +2,11 @@ import html
 import ipaddress
 import os
 import secrets
+import sqlite3
 from pathlib import Path
 from typing import Annotated
+
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -148,6 +151,72 @@ def create_app(
         if identity is None:
             raise HTTPException(status_code=401, detail="Sign-in required")
         return identity
+
+    if policy_service is not None:
+        from app.evidence_run import EvidenceRunRepository
+        from app.evidence_queue import EvidenceQueue
+        from app.policy_workspace import build_evidence_scope
+        from app.policy_run_routes import register_evidence_run_routes
+
+        evidence_repository = EvidenceRunRepository(policy_service._database)
+        # The async LangGraph evidence run is wired at startup behind an async
+        # SQLite checkpointer (AsyncSqliteSaver); it is created here with a
+        # deferred runner that is assigned on startup, after the event loop is up.
+        evidence_queue = EvidenceQueue(evidence_repository, runner=None)
+        app.state.evidence_repository = evidence_repository
+        app.state.evidence_queue = evidence_queue
+        register_evidence_run_routes(
+            app,
+            policy_service,
+            evidence_queue,
+            current_identity=current_identity,
+            request_session=request_session,
+            require_same_origin=require_same_origin,
+            require_csrf=require_csrf,
+        )
+    else:
+        evidence_queue = None
+        app.state.evidence_queue = None
+
+    if policy_service is not None:
+        async def _startup_evidence_run() -> None:
+            from app.evidence_run import EvidenceRunRepository
+            from app.evidence_runner import EvidenceRunner, build_evidence_graph
+            from app.evidence_queue import EvidenceQueue
+            from app.policy_workspace import build_evidence_scope
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            database = policy_service._database
+            conn = await aiosqlite.connect(database)
+            conn.row_factory = sqlite3.Row
+            checkpointer = AsyncSqliteSaver(conn)
+            graph = build_evidence_graph(
+                retriever=policy_service._retriever,
+                scope=build_evidence_scope(policy_service),
+                checkpointer=checkpointer,
+            )
+            evidence_runner = EvidenceRunner(
+                repository=evidence_repository,
+                graph=graph,
+                checkpointer=checkpointer,
+                retriever=policy_service._retriever,
+                scope=build_evidence_scope(policy_service),
+            )
+            evidence_queue = app.state.evidence_queue
+            evidence_queue._runner = evidence_runner
+            app.state.evidence_runner = evidence_runner
+            app.state.evidence_queue = evidence_queue
+            app.state.evidence_conn = conn
+
+        async def _shutdown_evidence_run() -> None:
+            conn = app.state.evidence_conn
+            if conn is not None:
+                await conn.close()
+                app.state.evidence_conn = None
+
+        app.on_event("startup")(_startup_evidence_run)
+        app.on_event("shutdown")(_shutdown_evidence_run)
 
     @app.get("/", response_class=HTMLResponse)
     async def home(request: Request) -> HTMLResponse:

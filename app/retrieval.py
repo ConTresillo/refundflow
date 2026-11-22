@@ -32,6 +32,24 @@ class PolicyEvidence:
     effective_to: str | None
     citation: str
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy_id": self.policy_id,
+            "version": self.version,
+            "department_id": self.department_id,
+            "section_id": self.section_id,
+            "text": self.text,
+            "title": self.title,
+            "source_name": self.source_name,
+            "source_url": self.source_url,
+            "source_type": self.source_type,
+            "provenance": self.provenance,
+            "content_hash": self.content_hash,
+            "effective_from": self.effective_from,
+            "effective_to": self.effective_to,
+            "citation": self.citation,
+        }
+
 
 class SQLiteEvidenceRetriever:
     """Use FTS for candidates and catalog snapshots as the freshness authority."""
