@@ -92,11 +92,28 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 ## Current active slice
 
-**Current prototype priority:** deliver toward the owner-directed five-day end-to-end exit above. `dev` is at `4c17567a8cd5ba891539872085eb59d165cb11b7` (verified via `git ls-remote origin refs/heads/dev`); the Windows lock repair and exact-SHA CI proof are recorded in Decisions 0036–0037, and P0 is complete history. Permission-filtered lexical evidence search, tenant-qualified retrieval conditions, PDF DOCX/TXT/MD ingestion, and source-watermark/outage tracking are all landed on `dev`.
+**Current prototype priority:** deliver toward the owner-directed five-day end-to-end exit, using existing repo modules and test harnesses.
 
-**Verified end-to-end slice in this run (C1 — freshness-aware retrieval):** evidence search now exposes `evidence_mode=freshness_preferred` (default; discloses source age and cache status), `evidence_mode=ttl_snapshot` (bounded TTL cache keyed on the catalog snapshot fingerprint, invalidated on catalog change), and `evidence_mode=critical` (always uncached, revalidating source availability and reauthorizing output before returning). Retrieval and the `/api/policy-search` route carry forward-compatible metadata (`cache_status`, `freshness_state`, `source_age_seconds`, `authorization_revision`, `document_revision`). New `tests/test_freshness_modes.py` covers forward-compatible disclosure metadata, critical bypass, TTL-cache invalidation on catalog change, and evidence-page freshness controls. Full suite passes; Ruff/compileall/pip check clean.
+**Current active slice (P5 — durable async evidence run):** delivered and verified on `dev`
+(`726c53c19159763e00eca5420b5363a135bfd3b7`; `git push b5428da..726c53c`). P5 adds a SQLite
+outbox/run model (`app/evidence_run.py`), an outbox-backed queue with bounded retries,
+cancellation, dead-lettering and restart-safe claim (`app/evidence_queue.py`), an async
+LangGraph authorize -> retrieve -> terminal evidence graph with `AsyncSqliteSaver`
+durable checkpointing (`app/evidence_runner.py`), and HTTP routes
+(POST `/api/evidence-runs` -> 202, `GET /api/evidence-runs/{id}`, cancel) wired through
+`app/web_runtime.py`. End-to-end tests cover duplicate submission (payload-hash-scoped
+idempotence), cancel/fail-closed, revoked-actor denial, and crash-recovery requeueing.
+Full suite: 131 passed, 161 warnings (EXIT=0); Ruff/compileall/pip check clear;
+`git diff --check` clean; remote `dev` read back equals pushed SHA.
 
-**Next:** P5 durable async evidence run (persistent `202` run ID, queue/worker, progress/events, retry/idempotence/cancellation, async LangGraph durable checkpointing) is the remaining end-to-end vertical before P6 human-in-the-loop approvals.
+**Next:** P6 bounded simulated decision + human-in-the-loop approvals (deterministic
+proposal + MCP, interrupt/resume with checkpoint recovery, audit/outcome immutability).
+
+### Historical acceptance evidence retained for earlier slices
+
+The earlier eager-execution slice (freshness-aware retrieval, C1) and the incremental
+document-format adapters are retained as delivered work; refer to Decisions 0052,
+0052-incremental-document-format-adapters, 0044, 0046–0049 for their recorded evidence.
 
 ### Historical P0 acceptance detail (completed; retained as evidence)
 
