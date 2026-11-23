@@ -6,8 +6,6 @@ import sqlite3
 from pathlib import Path
 from typing import Annotated
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -153,9 +151,8 @@ def create_app(
         return identity
 
     if policy_service is not None:
-        from app.evidence_run import EvidenceRunRepository
         from app.evidence_queue import EvidenceQueue
-        from app.policy_workspace import build_evidence_scope
+        from app.evidence_run import EvidenceRunRepository
         from app.policy_run_routes import register_evidence_run_routes
 
         evidence_repository = EvidenceRunRepository(policy_service._database)
@@ -195,9 +192,8 @@ def create_app(
     app.state.decision_repository = _decision_repository
 
     if policy_service is not None:
-        from app.evidence_run import EvidenceRunRepository
         from app.evidence_queue import EvidenceQueue
-        from app.policy_workspace import build_evidence_scope
+        from app.evidence_run import EvidenceRunRepository
         from app.policy_run_routes import register_evidence_run_routes
 
         evidence_repository = EvidenceRunRepository(policy_service._database)
@@ -222,12 +218,11 @@ def create_app(
 
     if policy_service is not None:
         async def _startup_evidence_run() -> None:
-            from app.evidence_run import EvidenceRunRepository
-            from app.evidence_runner import EvidenceRunner, build_evidence_graph
-            from app.evidence_queue import EvidenceQueue
-            from app.policy_workspace import build_evidence_scope
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            from app.evidence_runner import EvidenceRunner, build_evidence_graph
+            from app.policy_workspace import build_evidence_scope
 
             database = policy_service._database
             conn = await aiosqlite.connect(database)

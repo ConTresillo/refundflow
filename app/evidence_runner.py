@@ -10,14 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-import functools
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import StateGraph
 
 from app.evidence_run import (
-    EvidenceRun,
+    EvidenceRunRepository,
     EvidenceRunResult,
     EvidenceRunState,
     evidence_from_dicts,
@@ -71,7 +71,7 @@ def build_evidence_graph(
                 answer_cache=state["answer_cache"],
                 top_k=5,
             )
-        except Exception as error:  # bounded to one step; work queue retries the run
+        except Exception as error:  # noqa: BLE001 - normalize retrieval failures for bounded retry
             return {
                 "code": "failed",
                 "error": f"retrieval failed: {type(error).__name__}: {error}",
@@ -115,7 +115,7 @@ class EvidenceRunner:
     def __init__(
         self,
         *,
-        repository: "EvidenceRunRepository",
+        repository: EvidenceRunRepository,
         graph: Any | None = None,
         checkpointer: SqliteSaver | None = None,
         retriever: SQLiteEvidenceRetriever | None = None,
@@ -151,7 +151,9 @@ class EvidenceRunner:
             if scope is not None
             else set()
         )
-        run_id = row.run_id if hasattr(row, "run_id") else row["run_id"]
+        run_id = state.get("run_id")
+        if run_id is None:
+            raise ValueError("evidence run state is missing run_id")
         config = {"configurable": {"thread_id": run_id}}
         final_state = await self._graph.ainvoke(state, config=config)
         return EvidenceRunResult(

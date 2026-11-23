@@ -6,7 +6,6 @@ import asyncio
 import json
 from contextlib import closing
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -143,7 +142,7 @@ def test_cancel_queues_a_cancellation(client_and_service):
 
 # ---------------------------------------------------------------------- worker
 def test_worker_processes_a_queued_run_through_the_graph(client_and_service):
-    client, service, _, app = client_and_service
+    client, _service, _, app = client_and_service
     csrf = _csrf(client)
     created = client.post(
         "/api/evidence-runs",
@@ -181,14 +180,13 @@ def test_revoked_actor_fails_closed(client_and_service):
     )
     run_id = created.json()["run_id"]
     # Bob is the document owner; revoke his read grant through the IAM store.
-    from app.iam import DocumentGrant
     from app.iam_store import SQLiteIAMStore
 
     iam = SQLiteIAMStore(service._database)
     for document in iam.authorization_document_snapshot()[1]:
         if document.id == "billing-refunds":
             iam.put_document(
-                document.model_copy(update={"grants": tuple()}),
+                document.model_copy(update={"grants": ()}),
                 occurred_at="test-revocation",
             )
     queue = app.state.evidence_queue
@@ -199,7 +197,7 @@ def test_revoked_actor_fails_closed(client_and_service):
 
 # ---------------------------------------------------------------------- rollback
 def test_crash_recovery_requeues_running_runs(client_and_service):
-    client, service, _, app = client_and_service
+    client, _service, _, app = client_and_service
     csrf = _csrf(client)
     created = client.post(
         "/api/evidence-runs",
@@ -228,7 +226,7 @@ def test_crash_recovery_requeues_running_runs(client_and_service):
 
 # ---------------------------------------------------------------------- idempotency
 def test_idempotent_submission_returns_same_run_id(client_and_service):
-    client, service, _, _ = client_and_service
+    client, _service, _, _ = client_and_service
     csrf = _csrf(client)
     payload = {
         "tenant_id": "northstar-retail",

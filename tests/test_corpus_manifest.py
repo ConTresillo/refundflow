@@ -15,11 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.corpus_manifest import (
-    AdaptiveVariant,
     CorpusManifest,
-    License,
-    Source,
-    SourceRecord,
     Selections,
 )
 

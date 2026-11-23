@@ -10,18 +10,17 @@ else; a revoked actor fails closed before any retrieval text is produced.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, TypedDict
+from typing import Any, TypedDict
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
-
-import hashlib
 
 from app.retrieval import PolicyEvidence, SQLiteEvidenceRetriever
 
@@ -323,7 +322,7 @@ class EvidenceRunRepository:
         run_id: str,
         result_json: str,
         *,
-        events: list["EvidenceRunEvent"],
+        events: list[EvidenceRunEvent],
         now: str | None = None,
     ) -> bool:
         now = now or _now_iso()
@@ -356,7 +355,7 @@ class EvidenceRunRepository:
         error_json: dict[str, Any],
         retry_count: int,
         max_retries: int,
-        events: list["EvidenceRunEvent"],
+        events: list[EvidenceRunEvent],
         now: str | None = None,
     ) -> bool:
         now = now or _now_iso()
@@ -388,7 +387,7 @@ class EvidenceRunRepository:
         run_id: str,
         *,
         error_json: dict[str, Any],
-        events: list["EvidenceRunEvent"],
+        events: list[EvidenceRunEvent],
         now: str | None = None,
     ) -> bool:
         now = now or _now_iso()
@@ -414,7 +413,7 @@ class EvidenceRunRepository:
                 connection.rollback()
                 raise
 
-    def mark_cancelled(self, run_id: str, *, events: list["EvidenceRunEvent"], now: str | None = None) -> bool:
+    def mark_cancelled(self, run_id: str, *, events: list[EvidenceRunEvent], now: str | None = None) -> bool:
         now = now or _now_iso()
         with closing(self._connect()) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -587,7 +586,7 @@ class EvidenceRunRepository:
         self,
         connection: sqlite3.Connection,
         run_id: str,
-        events: list["EvidenceRunEvent"],
+        events: list[EvidenceRunEvent],
     ) -> None:
         connection.executemany(
             """

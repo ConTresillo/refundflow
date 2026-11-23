@@ -9,15 +9,15 @@ Exposes:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Annotated, Any, Callable
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.dev_sessions import DevelopmentSession
-from app.evidence_run import EvidenceRun
 from app.evidence_queue import EvidenceQueue
 from app.retrieval import SQLiteEvidenceRetriever
 

@@ -14,7 +14,6 @@ bounded, separate operation.
 from __future__ import annotations
 
 import datetime as _dt
-import json
 from pathlib import Path
 from typing import Any
 
@@ -90,7 +89,7 @@ class Selections(BaseModel):
     total: int = Field(ge=0)
 
     @model_validator(mode="after")
-    def _validate_counts(self) -> "Selections":
+    def _validate_counts(self) -> Selections:
         if self.total != self.original + self.synthetic:
             raise ValueError(
                 f"total ({self.total}) must equal original ({self.original}) + synthetic ({self.synthetic})"
@@ -138,7 +137,7 @@ class CorpusManifest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_manifest(self) -> "CorpusManifest":
+    def _validate_manifest(self) -> CorpusManifest:
         # Uniqueness of representations and source paths within one manifest.
         seen_ids: set[str] = set()
         seen_paths: set[str] = set()
@@ -184,11 +183,14 @@ class CorpusManifest(BaseModel):
                 raise ValueError(
                     f"rights.effective_to must be an ISO date, got {effective_to!r}"
                 ) from error
-        if effective_from is not None and effective_to is not None:
-            if effective_from >= effective_to:
-                raise ValueError(
-                    "rights.effective_from must be earlier than rights.effective_to"
-                )
+        if (
+            effective_from is not None
+            and effective_to is not None
+            and effective_from >= effective_to
+        ):
+            raise ValueError(
+                "rights.effective_from must be earlier than rights.effective_to"
+            )
 
     def _validate_bounded_selection(self) -> None:
         formed = self.formed_by

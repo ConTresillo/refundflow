@@ -17,16 +17,10 @@ from typing import Any
 from app.evidence_run import (
     EvidenceRun,
     EvidenceRunEvent,
-    _now_iso,
     EvidenceRunRepository,
+    _now_iso,
 )
 from app.evidence_runner import EvidenceRunner
-
-
-def _now_iso() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _event(
@@ -124,7 +118,7 @@ class EvidenceQueue:
             result = await self._runner.run(run_id)
         except asyncio.CancelledError:
             raise
-        except Exception as error:  # transient; bounded retry, then dead letter
+        except Exception as error:  # noqa: BLE001 - persist/retry all unexpected worker failures
             retry_count = int(row["retry_count"]) + 1
             if retry_count > self._max_retries:
                 self._repository.mark_failed(

@@ -11,6 +11,7 @@ import asyncio
 from typing import Any
 
 import pytest
+from mcp.server.fastmcp.exceptions import ToolError
 
 from app.mcp_tools import create_mcp_server
 
@@ -98,7 +99,7 @@ def test_get_policy_document_returns_current_version(catalog):
 
 def test_get_policy_document_rejects_unknown_policy(catalog):
     server = create_mcp_server(catalog=catalog)
-    with pytest.raises(Exception):
+    with pytest.raises(ToolError, match="policy not found or not active"):
         asyncio.run(
             server.call_tool(
                 "get_policy_document",
@@ -141,13 +142,13 @@ def test_query_local_evidence_returns_department_only(catalog):
 
 def test_unknown_tool_is_rejected(catalog):
     server = create_mcp_server(catalog=catalog)
-    with pytest.raises(Exception):
+    with pytest.raises(ToolError, match="Unknown tool: bogus_tool"):
         asyncio.run(server.call_tool("bogus_tool", arguments={}))
 
 
 def test_unknown_evidence_mode_is_rejected(catalog):
     server = create_mcp_server(catalog=catalog)
-    with pytest.raises(Exception):
+    with pytest.raises(ToolError, match="unknown evidence_mode"):
         asyncio.run(
             server.call_tool(
                 "query_local_evidence",

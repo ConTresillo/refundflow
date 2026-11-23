@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import shutil
-from collections.abc import Iterable
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from app.incremental_index import SQLitePolicyIndex
 from app.policy_catalog import PolicyCatalog
