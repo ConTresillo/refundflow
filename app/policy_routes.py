@@ -53,19 +53,25 @@ main{min-width:0}.topbar{height:68px;background:#ffffffc9;border-bottom:1px soli
 .search-tools{display:flex;gap:10px;align-items:center}.search-tools label{font-size:12px;font-weight:650;color:var(--muted)}
 .search-tools select{width:auto;padding:10px 12px;border:1px solid #d9dce5;border-radius:8px;background:white;color:var(--ink);outline:none}
 .freshness{font-size:10px;color:var(--mint);background:#f2faf5;border-radius:6px;padding:3px 7px;font-weight:600}
+.cache-tools{display:flex;gap:10px;align-items:center}.cache-tools label{font-size:12px;font-weight:650;color:var(--muted)}
+.cache-tools select{width:auto;padding:10px 12px;border:1px solid #d9dce5;border-radius:8px;background:white;color:var(--ink);outline:none}
+.cache-report{margin:16px 0;font-size:12px;color:#697184;padding:10px 12px;background:#f8faf9;border:1px solid #e6e7ed;border-radius:8px}
 </style></head>
 <body><div class="shell"><aside><a class="brand" href="/"><span class="mark">↗</span><span class="brand-word">RefundFlow</span></a><div class="workspace"><small>Demo workspace</small><strong>__TENANT_NAME__</strong></div><span class="nav-label">Workspace</span><nav class="nav" aria-label="Workspace"><a class="active" href="/evidence" aria-current="page"><span class="ico">⌕</span><span class="nav-text">Policy desk</span></a><a href="/policies"><span class="ico">▤</span><span class="nav-text">Policy library</span></a><a href="/"><span class="ico">◉</span><span class="nav-text">Identity profile</span></a></nav><div class="aside-bottom"><span class="demo-dot"></span>Local simulation · no live refunds</div></aside>
 <main><header class="topbar"><div class="crumb">Refund operations <span aria-hidden="true">/</span> <strong>Policy desk</strong></div><div class="profile"><span class="avatar" aria-hidden="true">RF</span>__IDENTITY_NAME__</div></header><div class="content"><div class="eyebrow">Evidence Explorer · Refund support</div><div class="intro"><div><h1>Find the policy behind the answer.</h1><p>Check a customer scenario against the policy evidence your signed-in identity is allowed to see.</p></div><span class="mode-badge">Permission-checked search</span></div>
-<div class="search-card"><label for="query">Customer scenario or policy question</label><div class="query-wrap"><span class="spark" aria-hidden="true">✳</span><input id="query" maxlength="300" placeholder="e.g. The customer lost their receipt — can we still refund?" autocomplete="off"></div><div class="form-bottom"><div class="scope"><label for="department">Department scope</label><input id="department" list="department-options" value="billing" maxlength="64"><datalist id="department-options"><option value="support"><option value="billing"><option value="shipping"><option value="risk"></datalist><div class="scope-note">Search stays within this department and your document grants.</div></div><div class="search-tools"><label for="freshness">Freshness</label><select id="freshness"><option value="freshness_preferred">Fresh (authoritative)</option><option value="ttl_snapshot">Fresh snapshot (cached for 5m)</option><option value="critical">Fresh RAG (always uncached)</option></select><button id="fresh-rag" class="primary" disabled>Fresh RAG · always uncached</button></div><button id="search" class="primary">Find policy evidence <span aria-hidden="true">→</span></button></div><p class="search-hint">Try “refund receipt” or “damaged item” to explore the synthetic demo policies.</p></div>
+<div class="search-card"><label for="query">Customer scenario or policy question</label><div class="query-wrap"><span class="spark" aria-hidden="true">✳</span><input id="query" maxlength="300" placeholder="e.g. The customer lost their receipt — can we still refund?" autocomplete="off"></div><div class="form-bottom"><div class="scope"><label for="department">Department scope</label><input id="department" list="department-options" value="billing" maxlength="64"><datalist id="department-options"><option value="support"><option value="billing"><option value="shipping"><option value="risk"></datalist><div class="scope-note">Search stays within this department and your document grants.</div></div><div class="search-tools"><label for="freshness">Freshness</label><select id="freshness"><option value="freshness_preferred">Fresh (authoritative)</option><option value="ttl_snapshot">Fresh snapshot (cached for 5m)</option><option value="critical">Fresh RAG (always uncached)</option></select><button id="fresh-rag" class="primary" disabled>Fresh RAG · always uncached</button></div><div class="search-tools"><label for="cache-mode">Cache mode</label><select id="cache-mode"><option value="off">Off (default)</option><option value="exact">Exact envelope (safe)</option><option value="semantic">Semantic (disclaimer)</option><option value="miss">Miss (always re-fetch)</option><option value="bypass">Bypass (no reuse)</option><option value="reject">Reject (fail-closed)</option></select><button id="cache-apply" class="primary">Apply cache mode</button></div><button id="search" class="primary">Find policy evidence <span aria-hidden="true">→</span></button></div><p class="search-hint">Try “refund receipt” or “damaged item” to explore the synthetic demo policies.</p></div>
 <p class="disclaimer"><span aria-hidden="true">ⓘ</span><span><strong>Evidence-only prototype.</strong> Search is real, local lexical retrieval with citations. It does not generate a refund decision, contact a customer, or move money.</span></p>
-<div class="section-head"><div><h2>Policy evidence</h2><p>Sources are scoped to your current demo identity.</p></div><span class="trust-chip">Lexical retrieval · no AI-generated answer</span></div><p id="status" role="status" aria-live="polite">Enter a scenario to see permitted evidence and source citations.</p><section id="results" aria-live="polite"><div class="empty"><strong>Your evidence will appear here.</strong>Run a policy search to inspect matching clauses, versions, and citations.</div></section><div class="footer-note"><span>RefundFlow local prototype</span><span>Development identity is simulated · loopback only</span></div></div></main></div><script>
+<div class="section-head"><div><h2>Policy evidence</h2><p>Sources are scoped to your current demo identity.</p></div><span class="trust-chip">Lexical retrieval · no AI-generated answer</span></div><div class="cache-report" id="cache-report" role="status" aria-live="polite"></div><p id="status" role="status" aria-live="polite">Enter a scenario to see permitted evidence and source citations.</p><section id="results" aria-live="polite"><div class="empty"><strong>Your evidence will appear here.</strong>Run a policy search to inspect matching clauses, versions, and citations.</div></section><div class="footer-note"><span>RefundFlow local prototype</span><span>Development identity is simulated · loopback only</span></div></div></main></div><script>
 const csrf = document.querySelector('meta[name="csrf-token"]').content;
 const statusNode = document.getElementById('status');
 const resultsNode = document.getElementById('results');
 const searchButton = document.getElementById('search');
 const freshnessSelect = document.getElementById('freshness');
 const freshRagButton = document.getElementById('fresh-rag');
+const cacheModeSelect = document.getElementById('cache-mode');
+const cacheApplyButton = document.getElementById('cache-apply');
 let currentMode = 'freshness_preferred';
+let currentCacheMode = 'off';
 
 async function searchEvidence(mode) {
   const mode = mode || currentMode;
@@ -78,7 +84,9 @@ async function searchEvidence(mode) {
   }
   searchButton.disabled = true;
   freshRagButton.disabled = true;
+  cacheApplyButton.disabled = true;
   statusNode.textContent = 'Checking permitted policy evidence…';
+  let body = [];
   try {
     const params = new URLSearchParams({
       department_id: department,
@@ -86,7 +94,7 @@ async function searchEvidence(mode) {
       as_of: new Date().toISOString().slice(0, 10),
       top_k: '5',
       evidence_mode: mode,
-      answer_cache: 'off'
+      answer_cache: currentCacheMode
     });
     const response = await fetch('/api/policy-search?' + params, {
       credentials:'same-origin',
@@ -133,6 +141,17 @@ async function searchEvidence(mode) {
       article.append(head, text);
       resultsNode.append(article);
     }
+    const cacheReport = document.getElementById('cache-report');
+    if (cacheReport && body.length > 0) {
+      const first = body[0];
+      const labels = { off: 'off', exact: 'exact', semantic: 'semantic', miss: 'miss', bypass: 'bypass', reject: 'reject' };
+      const modeLabel = labels[first.answer_cache] || first.answer_cache || 'off';
+      const freshnessState = first.freshness_state || 'unknown';
+      const sourceAge = first.source_age_seconds != null ? first.source_age_seconds + 's' : 'n/a';
+      cacheReport.textContent = `Cache control mode: ${modeLabel || 'off'} · Cache status: ${first.cache_status || 'off'} · Freshness: ${freshnessState} · Source age: ${sourceAge}`;
+    } else if (cacheReport) {
+      cacheReport.textContent = '';
+    }
   } catch (error) {
     statusNode.textContent = error.message || 'Search unavailable.';
     const empty = document.createElement('div');
@@ -153,6 +172,13 @@ freshRagButton.addEventListener('click', function () { searchEvidence('critical'
 freshnessSelect.addEventListener('change', function () {
   currentMode = freshnessSelect.value;
   freshRagButton.disabled = false;
+});
+cacheModeSelect.addEventListener('change', function () {
+  currentCacheMode = cacheModeSelect.value;
+});
+cacheApplyButton.addEventListener('click', function () {
+  currentCacheMode = cacheModeSelect.value;
+  searchEvidence(currentMode);
 });
 </script></body></html>"""
 

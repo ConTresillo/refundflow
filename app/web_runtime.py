@@ -4,7 +4,7 @@ import os
 import secrets
 import sqlite3
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
@@ -190,6 +190,112 @@ def create_app(
         require_csrf=require_csrf,
     )
     app.state.decision_repository = _decision_repository
+    _DECISION_RUNS_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="__CSRF__">
+<title>RefundFlow · decision runs</title>
+<style>
+body{font:16px system-ui;max-width:860px;margin:2rem auto;padding:0 1rem;color:#18202b;background:#f4f7fb}
+main{background:#fff;padding:2rem;border-radius:16px;box-shadow:0 8px 30px #13243a12}
+h1{font-size:1.6rem;margin:0 0 .5rem}
+p{font-size:.95rem;color:#4b5563}
+.run-card{border:1px solid #d9e1eb;border-radius:12px;padding:1rem;margin:1rem 0}
+.run-head{display:flex;justify-content:space-between;align-items:baseline;gap:1rem}
+.run-id{font-weight:700;font-size:1.05rem;padding:2px 8px;background:#eff6ff;border-radius:6px;color:#1d4ed8}
+.run-meta{font-size:.85rem;color:#6b7280}
+.run-detail{margin-top:.75rem;font-size:.9rem;color:#4b5563}
+.event{padding:.45rem .65rem;background:#f8faf9;border-left:3px solid #2563eb;margin:.35rem 0;border-radius:0 6px 6px 0}
+.event .meta{font-size:.8rem;color:#6b7280}
+.empty{color:#6b7280;font-style:italic}
+.disclaimer{font-size:.8rem;color:#6b7280;margin-top:1.25rem}
+button{padding:.6rem 1rem;border-radius:8px;border:0;background:#2159a6;color:#fff;cursor:pointer;margin-top:.5rem}
+p[role="alert"]{background:#fff4d2;padding:.75rem;border-radius:8px}
+</style>
+</head>
+<body>
+<main>
+  <h1>RefundFlow · decision runs</h1>
+  <p>Signed in as __IDENTITY_NAME__ (tenant __TENANT_NAME__).</p>
+  <p id="status" role="alert" aria-live="polite">Loading runs…</p>
+  <section id="runs" aria-live="polite">__RUN_CARDS__</section>
+  <p class="disclaimer">Runs are immutable simulation records. The audit timeline is redacted of raw customer text, question, and evidence; only the redacted timeline is shown.</p>
+  <script>
+    const csrf = document.querySelector('meta[name="csrf-token"]').content;
+    async function loadRuns() {
+      const list = document.getElementById('runs');
+      const status = document.getElementById('status');
+      try {
+        const res = await fetch('/api/decision-runs', { credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } });
+        const runs = await res.json();
+        if (!res.ok) throw new Error((runs && runs.detail) || 'search failed');
+        if (!runs.length) { status.textContent = 'No decision runs yet.'; return; }
+        status.textContent = runs.length + ' decision run' + (runs.length === 1 ? '' : 's') + ' visible for your tenant.';
+        for (const run of runs) {
+          const card = document.createElement('article');
+          card.className = 'run-card';
+          const head = document.createElement('div');
+          head.className = 'run-head';
+          const id = document.createElement('span');
+          id.className = 'run-id';
+          id.textContent = (run.run_id && run.run_id.length > 8) ? run.run_id.substring(0, 8) + '…' : run.run_id;
+          const meta = document.createElement('span');
+          meta.className = 'run-meta';
+          meta.textContent = 'tenant ' + (run.tenant_id || '—') + ' · as_of ' + (run.as_of || '—');
+          head.append(id, meta);
+          const detail = document.createElement('div');
+          detail.className = 'run-detail';
+          detail.textContent = 'status: ' + (run.status || '—') + ' · decision: ' + (run.decision || '—');
+          card.append(head, detail);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.textContent = 'View redacted audit timeline';
+          btn.addEventListener('click', async () => {
+            detail.textContent = 'Loading audit…';
+            card.append(detail);
+            try {
+              const ar = await fetch('/api/decision-runs/' + encodeURIComponent(run.run_id) + '/audit', { credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf } });
+              const ev = await ar.json();
+              if (!ar.ok) { detail.textContent = 'Audit load failed: ' + (ev && ev.detail); return; }
+              detail.textContent = 'Audit events (redacted):';
+              for (const e of ev.events || []) {
+                const el = document.createElement('div');
+                el.className = 'event';
+                const parts = [(e.event_type || '?'), (e.occurred_at || ''), e.actor_subject_id ? '· ' + e.actor_subject_id : ''];
+                el.textContent = parts.join(' ');
+                detail.appendChild(el);
+              }
+            } catch (err) { detail.textContent = 'Audit load failed: ' + err.message; }
+          });
+          card.append(btn);
+          list.appendChild(card);
+        }
+      } catch (e) { status.textContent = 'Failed to load runs: ' + e.message; }
+    }
+    loadRuns();
+  </script>
+</body>
+</html</html>"""
+    @app.get("/runs", response_class=HTMLResponse)
+    async def decision_runs_page(request: Request) -> HTMLResponse:
+        if not dev_enabled:
+            raise HTTPException(status_code=404, detail="Not found")
+        session = request_session(request)
+        if session is None:
+            raise HTTPException(status_code=401, detail="Sign-in required")
+        identity = current_identity(request)
+        runs = app.state.decision_repository.list_runs(identity.tenant_id)
+        cards = "".join(_decision_run_card_html(run) for run in runs)
+        body = (
+            _DECISION_RUNS_HTML
+            .replace("__CSRF__", html.escape(session.csrf_token, quote=True))
+            .replace("__TENANT_NAME__", html.escape(identity.tenant_name))
+            .replace("__IDENTITY_NAME__", html.escape(identity.display_name))
+            .replace("__RUN_CARDS__", cards)
+        )
+        return HTMLResponse(body, headers={"Cache-Control": "no-store"})
 
     if policy_service is not None:
         from app.evidence_queue import EvidenceQueue
@@ -423,3 +529,18 @@ def create_app(
 
 
 app = create_app()
+def _decision_run_card_html(run: Any) -> str:
+    run_id = run.run_id or "—"
+    status = run.status or "—"
+    decision = run.decision
+    decision_label = decision if decision in {"approve", "deny"} else "—"
+    return (
+        '<article class="run-card">'
+        '<div class="run-head">'
+        f'<span class="run-id">{html.escape((str(run_id)[:8] + "…") if len(str(run_id)) > 8 else run_id)}</span>'
+        f'<span class="run-meta">tenant {html.escape(str(run.tenant_id) if run.tenant_id else "—")} · as_of {html.escape(str(run.as_of) if run.as_of else "—")}</span>'
+        '</div>'
+        f'<div class="run-detail">status: {html.escape(str(status))} · decision: {html.escape(decision_label)}</div>'
+        f'<button type="button" class="audit-trigger" data-run-id="{html.escape(str(run_id))}">View redacted audit timeline</button>'
+        '</article>'
+    )
