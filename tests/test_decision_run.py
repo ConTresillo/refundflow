@@ -306,3 +306,74 @@ def test_route_fail_closed_on_acl_change_at_resume(repository: DecisionRunReposi
         )
     assert response.status_code == 403
     assert call_count["n"] == 1
+
+
+def test_route_run_read_is_limited_to_the_run_owner(repository: DecisionRunRepository) -> None:
+    run_id = repository.create_run(
+        tenant_id="northstar-retail",
+        actor_subject_id="alice.chen",
+        question="private question",
+        evidence=_sample_evidence(),
+        as_of="2026-11-22",
+        evidence_mode="freshness_preferred",
+        answer_cache="off",
+    )
+    app = _make_app(
+        repository,
+        current_identity=lambda request: _identity("bob.patel", "northstar-retail"),
+    )
+
+    response = TestClient(app).get(f"/api/decision-runs/{run_id}")
+
+    assert response.status_code == 403
+
+
+def test_non_owner_cannot_self_appoint_for_approval(repository: DecisionRunRepository) -> None:
+    run_id = repository.create_run(
+        tenant_id="northstar-retail",
+        actor_subject_id="alice.chen",
+        question="q",
+        evidence=_sample_evidence(),
+        as_of="2026-11-22",
+        evidence_mode="freshness_preferred",
+        answer_cache="off",
+    )
+    app = _make_app(
+        repository,
+        current_identity=lambda request: _identity("bob.patel", "northstar-retail"),
+    )
+
+    with patch(
+        "app.decision_run_routes.build_decision_graph",
+        return_value=_FakeGraph({"code": "completed", "decision": "approve"}),
+    ):
+        response = TestClient(app).post(
+            f"/api/decision-runs/{run_id}/approve",
+            json={"decision": "approve", "approver_subject_id": "bob.patel"},
+        )
+
+    assert response.status_code == 403
+    assert repository.status(run_id)["decision"] is None
+
+
+def test_non_owner_cannot_cancel_another_actors_run(repository: DecisionRunRepository) -> None:
+    run_id = repository.create_run(
+        tenant_id="northstar-retail",
+        actor_subject_id="alice.chen",
+        question="q",
+        evidence=_sample_evidence(),
+        as_of="2026-11-22",
+        evidence_mode="freshness_preferred",
+        answer_cache="off",
+    )
+    app = _make_app(
+        repository,
+        current_identity=lambda request: _identity("bob.patel", "northstar-retail"),
+    )
+
+    response = TestClient(app).post(
+        f"/api/decision-runs/{run_id}/cancel", json={"command_id": "cancel-1"}
+    )
+
+    assert response.status_code == 403
+    assert repository.status(run_id)["status"] == "interrupted"

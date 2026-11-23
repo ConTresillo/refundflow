@@ -108,9 +108,28 @@ def register_decision_run_routes(
     ) -> None:
         if identity.tenant_id != run.tenant_id:
             raise HTTPException(status_code=403, detail="approver is not in the run tenant")
+        if identity.subject_id != run.actor_subject_id:
+            raise HTTPException(status_code=403, detail="only the run owner may approve")
 
-    default_authorize_run = authorize_run or _default_authorize_run
-    default_authorize_approve = authorize_approve or _default_authorize_approve
+    def _authorize_run_tenant(request: Request, identity: Any, tenant_id: str) -> None:
+        _default_authorize_run(request, identity, tenant_id)
+        if authorize_run is not None:
+            authorize_run(request, identity, tenant_id)
+
+    def _authorize_owned_run(
+        request: Request, identity: Any, tenant_id: str, actor_subject_id: str
+    ) -> None:
+        _authorize_run_tenant(request, identity, tenant_id)
+        if identity.subject_id != actor_subject_id:
+            raise HTTPException(status_code=403, detail="run is not owned by this actor")
+
+    def _authorize_approval(request: Request, identity: Any, run: DecisionRun) -> None:
+        _default_authorize_approve(request, identity, run)
+        if authorize_approve is not None:
+            authorize_approve(request, identity, run)
+
+    default_authorize_run = _authorize_run_tenant
+    default_authorize_approve = _authorize_approval
 
     def _require_interrupted(request: Request) -> None:
         run = repository.status(run_id=_run_id_from_request(request))
@@ -239,10 +258,14 @@ def register_decision_run_routes(
 
     # --------------------------------------------------------------- get
     def _get_decision_run(request: Request) -> JSONResponse:
+        identity = current_identity(request)
         run_id = _run_id_from_request(request)
         row = repository.status(run_id)
         if row is None:
             raise HTTPException(status_code=404, detail="decision run not found")
+        _authorize_owned_run(
+            request, identity, row["tenant_id"], row["actor_subject_id"]
+        )
         return JSONResponse(
             {
                 "run_id": row["run_id"],
@@ -273,7 +296,10 @@ def register_decision_run_routes(
         row = repository.status(run_id)
         if row is None:
             raise HTTPException(status_code=404, detail="decision run not found")
-        _default_authorize_run(request, current_identity(request), row["tenant_id"])
+        identity = current_identity(request)
+        _authorize_owned_run(
+            request, identity, row["tenant_id"], row["actor_subject_id"]
+        )
         return JSONResponse(
             {
                 "run_id": row["run_id"],
@@ -336,14 +362,13 @@ def register_decision_run_routes(
                 status_code=422, detail=f"decision must be approve or deny (got {payload.decision!r})"
             )
 
-        # Re-authorize at resume: the approved-by actor and the run tenant must
-        # still be consistent. Fail closed on any mismatch.
-        if run.actor_subject_id != identity.subject_id and identity.subject_id != payload.approver_subject_id:
-            raise HTTPException(status_code=403, detail="approver is not the run owner or a designated approver")
-
-        # Re-check membership in the run tenant at resume time (fail-closed).
-        if identity.tenant_id != run.tenant_id:
-            raise HTTPException(status_code=403, detail="approver membership changed; access denied")
+        # The request may repeat the authenticated actor ID for audit clarity,
+        # but a client-supplied approver ID never grants access.
+        if (
+            payload.approver_subject_id is not None
+            and payload.approver_subject_id != identity.subject_id
+        ):
+            raise HTTPException(status_code=403, detail="approver identity mismatch")
 
         try:
             from aiosqlite import connect as _connect
@@ -415,12 +440,16 @@ def register_decision_run_routes(
 
     # -------------------------------------------------------------- cancel
     def _cancel_decision_run(request: Request, payload: DecisionCancelRequest) -> JSONResponse:
-        run_id = _run_id_from_request(request)
         identity = current_identity(request)
+        require_same_origin(request)
+        require_csrf(request_session(request), request.headers.get("x-csrf-token"))
+        run_id = _run_id_from_request(request)
         row = repository.status(run_id)
         if row is None:
             raise HTTPException(status_code=404, detail="decision run not found")
-        default_authorize_run(request, identity, row["tenant_id"])
+        _authorize_owned_run(
+            request, identity, row["tenant_id"], row["actor_subject_id"]
+        )
         _assert_interrupted(row)
         repository.cancel_run(
             run_id=run_id,
@@ -439,8 +468,10 @@ def register_decision_run_routes(
         identity = current_identity(request)
         require_same_origin(request)
         require_csrf(request_session(request), request.headers.get("x-csrf-token"))
-        _default_authorize_run(request, identity, identity.tenant_id)
-        rows = repository.list_runs(identity.tenant_id, limit=50)
+        default_authorize_run(request, identity, identity.tenant_id)
+        rows = repository.list_runs(
+            identity.tenant_id, actor_subject_id=identity.subject_id, limit=50
+        )
         return JSONResponse(
             [DecisionRun.model_validate(row).model_dump() for row in rows],
             headers={"Cache-Control": "no-store"},
