@@ -9,6 +9,11 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from app.answer_cache import (
+    AnswerCache,
+    CacheKey,
+    SqliteBoundedAnswerCache,
+)
 from app.incremental_index import IndexedChunk, SQLitePolicyIndex
 from app.policy_catalog import PolicyCatalog
 
@@ -74,6 +79,7 @@ class SQLiteEvidenceRetriever:
         cache_ttl_seconds: float = 300.0,
         source_check_max_age_seconds: float = 60.0,
         max_cache_entries: int = 256,
+        cache: AnswerCache | None = None,
     ) -> None:
         self._index = index
         self._catalog = catalog
@@ -85,6 +91,7 @@ class SQLiteEvidenceRetriever:
         self._cache: dict[str, self.CacheEntry] = {}
         self._last_cache_status: str = ""
         self._last_source_age_seconds: int = -1
+        self._answer_cache = cache or SqliteBoundedAnswerCache(catalog.database)
 
     def _require_evidence_mode(self, evidence_mode: str) -> str:
         if evidence_mode not in self.FRESHNESS_MODES:
@@ -220,6 +227,8 @@ class SQLiteEvidenceRetriever:
         top_k: int = 5,
         evidence_mode: str = "freshness_preferred",
         answer_cache: str = "off",
+        subject_id: str | None = None,
+        tenant_id: str | None = None,
     ) -> list[PolicyEvidence]:
         """Return only currently catalogued, active, date-eligible FTS passages.
 
@@ -267,6 +276,35 @@ class SQLiteEvidenceRetriever:
             items = self._build_evidence(
                 candidates, allowed_policy_ids or set(), as_of, envelope_fingerprint, cache_status, top_k
             )
+        elif answer_cache == "exact" and self._answer_cache is not None:
+            cache_key = CacheKey(
+                query=query,
+                departments=departments,
+                as_of=as_of,
+                allowed_policy_ids=allowed_policy_ids,
+                evidence_mode=evidence_mode,
+                answer_cache=answer_cache,
+                auth_subject=subject_id or "",
+                auth_tenant=tenant_id or "",
+                snapshot_hash=self._catalog_snapshot_fingerprint(),
+            )
+            cached = self._answer_cache.get(cache_key)
+            if cached is not None:
+                items = [PolicyEvidence(**item) for item in cached[0]]
+                cache_status = "exact_hit"
+            else:
+                cache_status = "miss"
+                items = self._build_evidence(
+                    candidates, allowed_policy_ids or set(), as_of, envelope_fingerprint, cache_status, top_k
+                )
+                self._answer_cache.put(
+                    cache_key,
+                    [item.to_dict() for item in items],
+                    snapshot_hash=cache_key.snapshot_hash,
+                    auth_hash=f"{subject_id or ''}\0{tenant_id or ''}",
+                    ttl_seconds=self._cache_ttl_seconds,
+                    size_bytes=sum(len(json.dumps(item.to_dict(), sort_keys=True).encode("utf-8")) for item in items),
+                )
         elif evidence_mode == "ttl_snapshot" and answer_cache != "off":
             entry = self._cache.get(envelope_fingerprint)
             if (

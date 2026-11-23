@@ -773,6 +773,8 @@ class PolicyChangeService:
             top_k=min(max(int(top_k), 1), 10),
             evidence_mode=evidence_mode,
             answer_cache=answer_cache,
+            subject_id=subject_id,
+            tenant_id=tenant_id,
         )
         if (
             authorization_revision is not None
