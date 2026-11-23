@@ -1,0 +1,11 @@
+# Decision 0051 — tenant-qualify PyCasbin role identities
+
+- Date: 2026-11-19. Goal: prevent tenant role ID collisions from merging permission assignments in a shared Casbin enforcer.
+- Context: SQLite roles are keyed by `(tenant_id, role_id)`, but the adapter flattened roles to role ID alone. Duplicate IDs were rejected, and membership/grant role subjects were global strings. This contradicted the persisted model and prevented overlapping tenants from expressing distinct roles.
+- Decision: add optional tenant ownership to the `Role` snapshot model; uniquely index tenant-specific roles by `(tenant_id, id)`; build distinct Casbin subject names; resolve membership and grants within the resource tenant. A grant is emitted only when its permission belongs to that resolved role. Legacy tenantless role fixtures retain their prior global compatibility behavior. App wiring now carries the resolved tenant explicitly.
+- Test-first: new cross-tenant duplicate-role regression initially failed with `ValueError: role IDs must be unique`; after the adapter change it proves northstar `reader=document.read` allows its policy while southstar `reader=document.write` does not authorize read.
+- Touched: `app/iam.py`, `app/policy_routes.py`, `app/policy_change_service.py`, `tests/test_iam.py`, this record, ROADMAP.
+- Verification after final code edit: focused `.venv/Scripts/python.exe -m pytest tests/test_iam.py tests/test_iam_store.py tests/test_policy_retrieval.py tests/test_policy_admin_web.py -q` — 49 passed; Ruff on three changed app files and IAM test passed; compileall passed; pip check reported no broken requirements; `git diff --check` passed; full `.venv/Scripts/python.exe -m pytest -q` — 110 passed (13 existing LangSmith deprecation warnings).
+- Security/artifact review: local PyCasbin and SQLite only; no dependency/service/model/credential changes. This closes evaluator identity collision behavior, not a unified transactional snapshot or complete P1a/P1b acceptance. Existing dirty IAM whitespace edit was reviewed and preserved; unconnected docs/scratch/var data remain unstaged.
+- Commit/remote/CI: pending.
+- Next: complete same-revision snapshot of principals, tenant roles/permissions/assignments and documents/grants, then finish protected admin/retrieval enforcement and revocation tests.

@@ -20,3 +20,7 @@ policy_sources/
 github-privacy.txt
 github-tos.txt
 stripe-refunds.txt
+
+# Generated scratch, caches, and temp artifacts (never commit)
+.scratch/
+var/

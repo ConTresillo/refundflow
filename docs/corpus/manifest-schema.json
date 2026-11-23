@@ -1,0 +1,213 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "RefundFlow corpus manifest",
+  "description": "Versioned specification for the reproducible, permission-safe local demonstration corpus. Governs a pinned external source (for example a public handbook), its licensing/attribution, the composed source records, and any deterministic synthetic adaptations. The validator enforces: pinned source metadata, explicit rights/effective dates, unique representations, and bounded planned selection.",
+  "type": "object",
+  "required": ["schema_version", "source", "license", "formed_by", "selections"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version of this manifest schema (for example 1.0.0)."
+    },
+    "source": {
+      "type": "object",
+      "required": ["repository", "revision", "company"],
+      "description": "Pinned source revision metadata. The repository/revision are immutable anchors; the manifest is only rebuilt from this pinned revision.",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "format": "uri",
+          "description": "Public source repository URL (no credentials, no private/authenticated paths)."
+        },
+        "revision": {
+          "type": "string",
+          "description": "Pinned source revision (for example a git commit SHA)."
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Canonical public page/index URL of the source collection."
+        },
+        "company": {
+          "type": "string",
+          "description": "Company the source belongs to (for example GitLab)."
+        },
+        "department": {
+          "type": "string",
+          "description": "Primary department mapping for the source, with mapping confidence labeled."
+        },
+        "media_type": {
+          "type": "string",
+          "enum": ["text/markdown", "text/html", "application/pdf", "message/rfc822"],
+          "description": "Top-level normalized media type of the collected sources."
+        },
+        "retrieval_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO-8601 timestamp of the pinned retrieval, for provenance and invalidation."
+        }
+      },
+      "additionalProperties": false
+    },
+    "license": {
+      "type": "object",
+      "required": ["terms", "attribution"],
+      "description": "License and attribution for the corpus. Synthetic demonstration records are separately labeled; no public page is misrepresented as authentic company policy.",
+      "properties": {
+        "terms": {
+          "type": "string",
+          "description": "License identifier/terms (for example 'CC BY-SA 4.0')."
+        },
+        "attribution": {
+          "type": "string",
+          "description": "Required attribution text verbatim."
+        },
+        "notice_file": {
+          "type": "string",
+          "description": "Path to the license/NOTICE file (outside git unless redistribution is cleared)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "rights": {
+      "type": "object",
+      "required": ["effective_from", "effective_to"],
+      "description": "Explicit rights and retention. Effective dates are part of the manifest and invalidate cached answers without a global rebuild.",
+      "properties": {
+        "effective_from": {
+          "type": "string",
+          "format": "date",
+          "description": "Inclusive start date for these manifest terms."
+        },
+        "effective_to": {
+          "type": "string",
+          "format": "date",
+          "description": "Exclusive end date for these manifest terms (null = always in force)."
+        },
+        "allowed_batches": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Allowlisted source batches (paths/slugs) that may be ingested."
+        },
+        "excluded_batches": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Explicitly excluded source batches (for example personal profiles, recruiting material)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "formed_by": {
+      "type": "array",
+      "description": "Source records (originals and synthetic adaptations) that form the manifest.",
+      "items": {
+        "type": "object",
+        "required": ["representation_id", "media_type", "source", "status", "form"],
+        "additionalProperties": false,
+        "properties": {
+          "representation_id": {
+            "type": "string",
+            "description": "Stable, unique id for this representation within the manifest."
+          },
+          "form": {
+            "type": "string",
+            "enum": ["original", "synthetic"],
+            "description": "Whether this representation is an original source document or a synthetic adaptation."
+          },
+          "media_type": {
+            "type": "string",
+            "enum": ["text/markdown", "text/html", "application/pdf", "message/rfc822"],
+            "description": "Normalized media type of this representation."
+          },
+          "source": {
+            "type": "object",
+            "required": ["repository", "revision", "path"],
+            "properties": {
+              "repository": {"type": "string", "format": "uri"},
+              "revision": {"type": "string"},
+              "path": {"type": "string", "description": "Repository-relative path or slug."}
+            },
+            "additionalProperties": false
+          },
+          "source_hash": {
+            "type": "string",
+            "description": "Raw content hash (sha256) of the original bytes."
+          },
+          "normalized_hash": {
+            "type": "string",
+            "description": "Hash of the normalized/paragraphed text used for chunking."
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Effective-from date for this representation."
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Exclusive effective-to date (null = still current)."
+          },
+          "department": {
+            "type": "string",
+            "description": "Department mapping for this representation."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "withdrawn", "obsolete"],
+            "description": "Lifecycle status of this representation."
+          }
+        }
+      }
+    },
+    "selections": {
+      "type": "object",
+      "required": ["original", "synthetic", "total"],
+      "description": "Bounded planned selection counts, reported separately for originals and synthetic format variants.",
+      "properties": {
+        "original": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of original source documents planned."
+        },
+        "synthetic": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of synthetic adaptation documents planned."
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total planned documents (original + synthetic)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "adaptive_variants": {
+      "type": "array",
+      "description": "Deterministic synthetic adaptations with parent source hash and mutation recipe.",
+      "items": {
+        "type": "object",
+        "required": ["variant_id", "parent_representation_id", "mutation_recipe_version", "expected_changed_section_ids"],
+        "properties": {
+          "variant_id": {"type": "string"},
+          "parent_representation_id": {"type": "string"},
+          "mutation_recipe_version": {"type": "string"},
+          "mutation_recipe": {"type": "string", "description": "Label of the mutation (for example clause-number-edit, negation, full-replacement)."},
+          "expected_changed_section_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Section ids expected to change under this recipe."
+          },
+          "expected_answers": {
+            "type": "object",
+            "description": "Optional expected-answer map for labeled evaluation."
+          },
+          "label": {"type": "string", "description": "Human-readable label; must start with 'synthetic-adaptation'."}
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

@@ -3,7 +3,7 @@ name: RefundFlow CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
   workflow_call:
 
@@ -24,7 +24,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            python-version: "3.10"
+            python-version: "3.11"
             install_mode: resolved
           - os: ubuntu-latest
             python-version: "3.12"

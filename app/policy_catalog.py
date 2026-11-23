@@ -39,9 +39,25 @@ class PolicyCatalog:
                 CREATE TABLE IF NOT EXISTS ingestion_sync_outcomes (
                     policy_id TEXT PRIMARY KEY,
                     outcome TEXT NOT NULL CHECK (
-                        outcome IN ('added', 'changed', 'unchanged', 'removed')
+                        outcome IN ('added', 'changed', 'unchanged', 'removed') OR outcome LIKE 'error:%'
                     ),
                     recorded_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ingestion_file_status (
+                    tenant_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('indexed', 'error')),
+                    message TEXT NOT NULL,
+                    occurred_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, document_id)
+                );
+                CREATE TABLE IF NOT EXISTS source_watermarks (
+                    policy_id TEXT PRIMARY KEY,
+                    observed_hash TEXT NOT NULL,
+                    observed_at TEXT NOT NULL,
+                    last_success_at TEXT,
+                    last_failure_at TEXT,
+                    failed_attempts INTEGER NOT NULL DEFAULT 0
                 );
                 """
             )
@@ -97,6 +113,35 @@ class PolicyCatalog:
         except sqlite3.IntegrityError as error:
             raise ValueError(f"policy version already exists: {record['id']}@{record['version']}") from error
 
+    def record_file_status(
+        self, tenant_id: str, document_id: str, *, status: str,
+        message: str, occurred_at: str,
+    ) -> None:
+        if status not in {"indexed", "error"} or not tenant_id or not document_id:
+            raise ValueError("invalid per-file ingestion status")
+        with closing(self._connect()) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                connection.execute(
+                    """INSERT INTO ingestion_file_status
+                    (tenant_id, document_id, status, message, occurred_at) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(tenant_id, document_id) DO UPDATE SET
+                        status=excluded.status, message=excluded.message, occurred_at=excluded.occurred_at""",
+                    (tenant_id, document_id, status, message[:160], occurred_at),
+                )
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    def file_status(self, tenant_id: str) -> list[dict[str, str]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT document_id, status, message, occurred_at FROM ingestion_file_status WHERE tenant_id=? ORDER BY document_id",
+                (tenant_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def sync_outcomes(
         self, *, connection: sqlite3.Connection | None = None
     ) -> dict[str, str]:
@@ -124,6 +169,71 @@ class PolicyCatalog:
                 outcome=excluded.outcome, recorded_at=excluded.recorded_at""",
             [(policy_id, outcome, occurred_at) for policy_id, outcome in outcomes.items()],
         )
+
+    def record_source_watermark(
+        self,
+        policy_id: str,
+        observed_hash: str,
+        observed_at: str,
+        connection: sqlite3.Connection | None = None,
+    ) -> None:
+        if connection is None:
+            with closing(self._connect()) as db:
+                return self.record_source_watermark(policy_id, observed_hash, observed_at, connection=db)
+        connection.execute(
+            """INSERT INTO source_watermarks(policy_id, observed_hash, observed_at, last_success_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(policy_id) DO UPDATE SET
+                observed_hash=excluded.observed_hash,
+                observed_at=excluded.observed_at,
+                last_success_at=excluded.last_success_at""",
+            (policy_id, observed_hash, observed_at, observed_at),
+        )
+
+    def record_source_failure(
+        self, policy_id: str, failed_at: str, connection: sqlite3.Connection | None = None
+    ) -> None:
+        if connection is None:
+            db = self._connect()
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    db.execute(
+                        "UPDATE source_watermarks SET last_failure_at=?, failed_attempts=failed_attempts+1 "
+                        "WHERE policy_id=?",
+                        (failed_at, policy_id),
+                    )
+                    db.commit()
+                except BaseException:
+                    db.rollback()
+                    raise
+            finally:
+                db.close()
+            return
+        connection.execute(
+            "UPDATE source_watermarks SET last_failure_at=?, failed_attempts=failed_attempts+1 "
+            "WHERE policy_id=?",
+            (failed_at, policy_id),
+        )
+
+    def source_watch_status(self, *, connection: sqlite3.Connection | None = None) -> dict[str, dict[str, str]]:
+        if connection is None:
+            with closing(self._connect()) as db:
+                return self.source_watch_status(connection=db)
+        rows = connection.execute(
+            "SELECT policy_id, observed_hash, observed_at, last_success_at, last_failure_at, failed_attempts "
+            "FROM source_watermarks ORDER BY policy_id"
+        ).fetchall()
+        return {
+            row["policy_id"]: {
+                "observed_hash": row["observed_hash"],
+                "observed_at": row["observed_at"],
+                "last_success_at": row["last_success_at"],
+                "last_failure_at": row["last_failure_at"],
+                "failed_attempts": str(row["failed_attempts"]),
+            }
+            for row in rows
+        }
 
     def current(
         self, policy_id: str, *, connection: sqlite3.Connection | None = None

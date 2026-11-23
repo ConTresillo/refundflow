@@ -1,0 +1,10 @@
+# Decision 0039 — Consistent principal/revision read snapshot
+
+- Date: 2026-11-21. Goal: provide a revision-tagged principal snapshot for P1a consumers.
+- Context: decision 0038 added a durable authorization revision counter. Separate reads of that counter and principal memberships can straddle a concurrent mutation, making a consumer pair stale memberships with a newer/older revision.
+- Decision: add `authorization_principal_snapshot()` that explicitly begins a SQLite read transaction, reads revision and principal rows from the same snapshot, commits, then validates rows into immutable `Principal` models. Retain the older principal-only API for compatibility; this method does not yet include tenant roles, documents, grants, or permission edges and is not an authorization decision.
+- Alternatives: process-local locking does not coordinate writers across connections/processes; query principals then revision separately is racy; replace the established SQLite store is unnecessary.
+- Files: `app/iam_store.py`, `tests/test_iam_store.py`, `docs/ROADMAP.md`, this record.
+- Test evidence: focused `.venv/Scripts/python.exe -m pytest tests/test_iam_store.py -q` — 13 passed. Full `.venv/Scripts/python.exe -m pytest -q` — 84 passed (13 existing LangSmith deprecation warnings). `.venv/Scripts/python.exe -m ruff check app tests`, `.venv/Scripts/python.exe -m compileall -q app tests`, `.venv/Scripts/python.exe -m pip check`, and `git diff --check` passed.
+- Security/limits: read-only local SQLite behavior; no network, dependencies, customer data, or external state. This partial snapshot must not be treated as complete authorization; role/document/grant snapshot consistency and tenant-qualified Casbin identities remain unfinished.
+- Commit/remote: recorded after commit and `git ls-remote origin refs/heads/dev` verification. Next: add remaining validated tenant-scoped authorization entities and assemble the complete revision-tagged snapshot without weakening deny-by-default semantics.

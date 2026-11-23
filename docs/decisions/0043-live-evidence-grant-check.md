@@ -1,0 +1,11 @@
+# Decision 0043 — Live grant check on the evidence endpoint
+
+- Date: 2026-11-21. Goal: connect authenticated lexical search to current tenant membership and document grants before evidence text is returned.
+- Context: policy search previously trusted the development identity but did not consult persisted IAM. SQLiteIAMStore persists principals and document grants; PyCasbin is the established evaluator.
+- Decision: before lexical search, resolve the principal and document from SQLite snapshots, require a matching authorization revision, build PyCasbin from stored role edges and require `document.read` for the stored scope/category. Missing principal/resource, revision mismatch or denial returns no evidence. Development demo sessions are materialized into persisted group membership on first search; document grant state is never synthesized or overwritten. The existing retrieval path runs only after allow.
+- Alternatives: post-filter ranked results (could expose unauthorized bodies to application code), infer permission from fixture role labels, or add a duplicate evaluator.
+- Files: `app/policy_routes.py`, `app/policy_change_service.py`, `tests/test_policy_admin_web.py`, `docs/ROADMAP.md`, this record. Dependencies: none.
+- Verification: focused `.venv/Scripts/python.exe -m pytest tests/test_policy_admin_web.py tests/test_iam.py tests/test_iam_store.py -q` — 33 passed. Full `.venv/Scripts/python.exe -m pytest -q` — 90 passed, 13 existing LangSmith deprecation warnings. Ruff, compileall, pip check and `git diff --check` passed.
+- Security/limits: synthetic data only; no external network, secrets or customer data. TestClient exercises absent/wrong-grant denial, valid citation and immediate grant removal denial. Not yet filter-before-ranking: FTS candidate SQL is not ACL-constrained. Full atomic IAM snapshot, UI error states, protected policy-admin mutations and OIDC remain outstanding. Development subject/tenant mapping remains fixture-only.
+- Commit/remote: pending. Unrelated dirty architecture/research artifacts and `.scratch/` are preserved and unstaged.
+- Next: tenant/resource eligibility in SQLite before FTS rank/limit and citation revalidation against authorization/catalog revisions.

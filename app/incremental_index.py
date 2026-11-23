@@ -70,6 +70,75 @@ class SQLitePolicyIndex:
         return db
 
     @staticmethod
+    def prepare_snapshot(chunks: Iterable[ChunkInput]) -> tuple[IndexedChunk, ...]:
+        """Return deterministic content-addressed rows for a complete policy snapshot."""
+        return tuple(SQLitePolicyIndex._prepare(chunks))
+
+    def verify_snapshot(
+        self,
+        policy_id: str,
+        version: str,
+        expected_chunks: Iterable[ChunkInput],
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> dict[str, object]:
+        """Compare expected rows with both the chunk table and the searchable FTS index."""
+        expected_input = tuple(expected_chunks)
+        if connection is None:
+            with closing(self._connect()) as db:
+                return self.verify_snapshot(
+                    policy_id, version, expected_input, connection=db
+                )
+        expected = {
+            (
+                chunk.chunk_id,
+                chunk.policy_id,
+                chunk.version,
+                chunk.department_id,
+                chunk.section_id,
+                chunk.text,
+            )
+            for chunk in self.prepare_snapshot(expected_input)
+        }
+        rows = connection.execute(
+            """SELECT chunk_id, policy_id, version, department_id, section_id, body
+            FROM policy_chunks WHERE policy_id=? AND version=? AND active=1
+            ORDER BY chunk_id""",
+            (policy_id, version),
+        ).fetchall()
+        actual = {
+            (
+                row["chunk_id"],
+                row["policy_id"],
+                row["version"],
+                row["department_id"],
+                row["section_id"],
+                row["body"],
+            )
+            for row in rows
+        }
+        fts_rows = connection.execute(
+            """SELECT f.chunk_id, f.body FROM policy_chunks_fts f
+            JOIN policy_chunks c ON c.chunk_id=f.chunk_id
+            WHERE c.policy_id=? AND c.version=? AND c.active=1
+            ORDER BY f.chunk_id""",
+            (policy_id, version),
+        ).fetchall()
+        fts = {(row["chunk_id"], row["body"]) for row in fts_rows}
+        expected_fts = {(item[0], item[5]) for item in expected}
+        return {
+            "verified": expected == actual
+            and expected_fts == fts
+            and len(fts_rows) == len(expected_fts),
+            "expected_count": len(expected),
+            "indexed_count": len(rows),
+            "fts_count": len(fts_rows),
+            "expected_chunk_ids": sorted(item[0] for item in expected),
+            "indexed_chunk_ids": sorted(row["chunk_id"] for row in rows),
+            "fts_chunk_ids": sorted(row["chunk_id"] for row in fts_rows),
+        }
+
+    @staticmethod
     def _prepare(chunks: Iterable[ChunkInput]) -> list[IndexedChunk]:
         prepared = []
         for item in chunks:
@@ -100,7 +169,9 @@ class SQLitePolicyIndex:
             scope = (chunk.policy_id, chunk.version)
             department = scope_departments.setdefault(scope, chunk.department_id)
             if department != chunk.department_id:
-                raise ValueError("all chunks in one policy version must use one department")
+                raise ValueError(
+                    "all chunks in one policy version must use one department"
+                )
 
         policy_scope = set(complete_versions)
         policy_scope.update(scope_departments)
@@ -124,7 +195,12 @@ class SQLitePolicyIndex:
                 "SELECT body, department_id, active FROM policy_chunks WHERE chunk_id=?",
                 (chunk.chunk_id,),
             ).fetchone()
-            if row and row["active"] and row["body"] == chunk.text and row["department_id"] == chunk.department_id:
+            if (
+                row
+                and row["active"]
+                and row["body"] == chunk.text
+                and row["department_id"] == chunk.department_id
+            ):
                 reused += 1
                 continue
             db.execute(
@@ -143,7 +219,9 @@ class SQLitePolicyIndex:
                     chunk.text,
                 ),
             )
-            db.execute("DELETE FROM policy_chunks_fts WHERE chunk_id=?", (chunk.chunk_id,))
+            db.execute(
+                "DELETE FROM policy_chunks_fts WHERE chunk_id=?", (chunk.chunk_id,)
+            )
             db.execute(
                 "INSERT INTO policy_chunks_fts(chunk_id, body) VALUES (?, ?)",
                 (chunk.chunk_id, chunk.text),
@@ -156,8 +234,14 @@ class SQLitePolicyIndex:
             ).fetchall():
                 scope = (row["policy_id"], row["version"])
                 if scope in policy_scope and row["chunk_id"] not in desired_ids:
-                    db.execute("UPDATE policy_chunks SET active=0 WHERE chunk_id=?", (row["chunk_id"],))
-                    db.execute("DELETE FROM policy_chunks_fts WHERE chunk_id=?", (row["chunk_id"],))
+                    db.execute(
+                        "UPDATE policy_chunks SET active=0 WHERE chunk_id=?",
+                        (row["chunk_id"],),
+                    )
+                    db.execute(
+                        "DELETE FROM policy_chunks_fts WHERE chunk_id=?",
+                        (row["chunk_id"],),
+                    )
                     retired += 1
         return IngestResult(processed, reused, retired, tuple(prepared))
 
@@ -202,18 +286,22 @@ class SQLitePolicyIndex:
         department_id: str,
         policy_id: str | None = None,
         version: str | None = None,
+        allowed_policy_ids: set[str] | None = None,
         top_k: int = 5,
     ) -> list[IndexedChunk]:
-        """Search with FTS5 OR semantics, optionally scoped to policy/version."""
-        terms = [
-            word.strip('.,;:!?()[]{}\"\'')
-            for word in query.split()
-        ]
+        """Search FTS with authorization, department and version filters before rank/limit."""
+        terms = [word.strip(".,;:!?()[]{}\\\"'") for word in query.split()]
         terms = list(dict.fromkeys(term for term in terms if term))
-        if not terms or top_k <= 0:
+        if not terms or top_k <= 0 or allowed_policy_ids == set():
             return []
         match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
-        params = (match, department_id, policy_id, policy_id, version, version, top_k)
+        policy_filter = ""
+        params: list[object] = [match, department_id, policy_id, policy_id, version, version]
+        if allowed_policy_ids is not None:
+            allowed = sorted(allowed_policy_ids)
+            policy_filter = f" AND c.policy_id IN ({','.join('?' for _ in allowed)})"
+            params.extend(allowed)
+        params.append(top_k)
         with closing(self._connect()) as db:
             try:
                 rows = db.execute(
@@ -222,8 +310,8 @@ class SQLitePolicyIndex:
                     FROM policy_chunks_fts f JOIN policy_chunks c ON c.chunk_id=f.chunk_id
                     WHERE policy_chunks_fts MATCH ? AND c.department_id=? AND c.active=1
                         AND (? IS NULL OR c.policy_id=?)
-                        AND (? IS NULL OR c.version=?)
-                    ORDER BY rank, c.chunk_id LIMIT ?""",
+                        AND (? IS NULL OR c.version=?)""" + policy_filter +
+                    " ORDER BY rank, c.chunk_id LIMIT ?",
                     params,
                 ).fetchall()
             except sqlite3.OperationalError as error:
