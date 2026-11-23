@@ -245,9 +245,7 @@ class PolicyIngestionService:
         if not isinstance(occurred_at, str) or not occurred_at.strip():
             raise ValueError("occurred_at must be an ISO date or timestamp")
         try:
-            sync_date = datetime.fromisoformat(
-                occurred_at.replace("Z", "+00:00")
-            ).date()
+            sync_date = datetime.fromisoformat(occurred_at).date()
         except ValueError as error:
             raise ValueError("occurred_at must be an ISO date or timestamp") from error
 

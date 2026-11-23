@@ -39,7 +39,7 @@ def _make_service(tmp_path, subject_id="alice.chen", evidence_mode="freshness_pr
     ingestion = PolicyIngestionService(source_dir, catalog, index)
     ingestion.sync(occurred_at="2026-06-01T00:00:00Z")
     service = PolicyChangeService(
-        source_dir, catalog, index, clock=lambda: datetime.datetime(2026, 6, 2, tzinfo=datetime.timezone.utc)
+        source_dir, catalog, index, clock=lambda: datetime.datetime(2026, 6, 2, tzinfo=datetime.UTC)
     )
     client = TestClient(create_app(environment="development", policy_service=service), client=("127.0.0.1", 8000), follow_redirects=False)
     homepage = client.get("/")

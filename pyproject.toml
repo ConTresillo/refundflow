@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "refundflow"
 version = "0.1.0"
 description = "Customer refund-support workflow: LangGraph multi-agent with human-in-the-loop approvals, policy-grounded retrieval, deterministic tests."
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "langgraph>=1.2",
     "langgraph-prebuilt>=1.1",

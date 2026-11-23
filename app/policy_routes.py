@@ -8,6 +8,7 @@ import re
 import sqlite3
 import tempfile
 from collections.abc import Callable
+from datetime import UTC
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
@@ -347,7 +348,7 @@ def register_policy_routes(
         content_type: Annotated[str | None, Header()] = None,
         x_csrf_token: Annotated[str | None, Header()] = None,
     ) -> JSONResponse:
-        from datetime import date, datetime, timezone
+        from datetime import date, datetime
         from pathlib import Path
 
         from app.document_parsers import MAX_PDF_BYTES
@@ -425,7 +426,7 @@ def register_policy_routes(
             staged_path.replace(ingestion_path)
             staged_path = ingestion_path
             outcome = PolicyIngestionService(service._source_dir, service._catalog, service._index).replace_pdf(
-                staged_path, record, occurred_at=datetime.now(timezone.utc).isoformat(), tenant_id=identity.tenant_id)
+                staged_path, record, occurred_at=datetime.now(UTC).isoformat(), tenant_id=identity.tenant_id)
         except HTTPException:
             raise
         except (OSError, ValueError, sqlite3.Error) as error:

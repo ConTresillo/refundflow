@@ -18,7 +18,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -116,7 +116,7 @@ _APPROVAL_DECISIONS = frozenset({"approve", "deny"})
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 class DecisionRunEvent(BaseModel):

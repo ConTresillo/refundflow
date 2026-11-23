@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -48,7 +48,7 @@ def _make_service(tmp_path, subject_id="alice.chen", tenant_id="northstar-retail
         source_dir,
         catalog,
         index,
-        clock=lambda: datetime(2026, 6, 2, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 6, 2, tzinfo=UTC),
     )
     return service, database
 

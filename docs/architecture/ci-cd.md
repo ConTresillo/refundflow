@@ -6,7 +6,7 @@ RefundFlow has no approved deployment destination and must stay local-first. Con
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, manual dispatch, and reusable-workflow calls. It runs `pip check`, `ruff check app tests`, `compileall`, and the full pytest suite with bounded job timeouts on Ubuntu/Python 3.10, 3.12, and 3.14, plus Windows/Python 3.14 using the repository's exact `requirements-dev.lock`. Ruff is pinned as a development-only dependency (`ruff==0.17.5`), and lint checks cover `app` and `tests`. The new index module and tests are formatted and checked locally; CI does not yet gate formatting because existing files are not all Ruff-formatted.
+`.github/workflows/ci.yml` runs on pull requests, pushes to `main` and `dev`, manual dispatch, and reusable-workflow calls. It runs `pip check`, `ruff check app tests`, `compileall`, and the full pytest suite with bounded job timeouts on Ubuntu/Python 3.11, 3.12, and 3.14, plus Windows/Python 3.14 using the repository's exact `requirements-dev.lock`. Ruff is pinned as a development-only dependency (`ruff==0.17.5`), and lint checks cover `app` and `tests`. The new index module and tests are formatted and checked locally; CI does not yet gate formatting because existing files are not all Ruff-formatted.
 
 The lock is explicitly for the provisioned Windows/Python 3.14 environment and includes Windows-specific packages. Linux jobs therefore resolve the ranges in `pyproject.toml`; they are compatibility checks, not lock-identical reproductions. A portable cross-platform lock remains a separate decision.
 

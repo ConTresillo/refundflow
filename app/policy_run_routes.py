@@ -10,7 +10,7 @@ Exposes:
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Query, Request
@@ -36,7 +36,7 @@ class EvidenceRunPayload(BaseModel):
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _validate_payload(payload: EvidenceRunPayload) -> None:

@@ -15,7 +15,7 @@ import json
 import sqlite3
 from collections.abc import Callable, Iterable
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -88,7 +88,7 @@ _TERMINAL_STATUSES = frozenset(
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 class EvidenceRunEvent(BaseModel):

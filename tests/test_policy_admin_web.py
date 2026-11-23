@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -47,7 +47,7 @@ def make_client(tmp_path: Path, subject_id: str = "alice.chen"):
         source_dir,
         catalog,
         index,
-        clock=lambda: datetime(2026, 6, 2, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 6, 2, tzinfo=UTC),
     )
     client = TestClient(
         create_app(environment="development", policy_service=policy_service),

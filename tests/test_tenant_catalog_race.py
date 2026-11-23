@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -31,7 +31,7 @@ def make_client(tmp_path: Path):
     database = tmp_path / "refundflow.sqlite3"
     catalog, index = PolicyCatalog(database), SQLitePolicyIndex(database)
     PolicyIngestionService(source_dir, catalog, index).sync(occurred_at="2026-06-01T00:00:00Z")
-    service = PolicyChangeService(source_dir, catalog, index, clock=lambda: datetime(2026, 6, 2, tzinfo=timezone.utc))
+    service = PolicyChangeService(source_dir, catalog, index, clock=lambda: datetime(2026, 6, 2, tzinfo=UTC))
     client = TestClient(create_app(environment="development", policy_service=service), client=("127.0.0.1", 8000), follow_redirects=False)
     import re
     home = client.get("/")
@@ -72,5 +72,5 @@ def test_authorization_parameters_are_an_all_or_none_search_contract(tmp_path):
     db = tmp_path / "db.sqlite3"
     catalog, index = PolicyCatalog(db), SQLitePolicyIndex(db)
     PolicyIngestionService(source, catalog, index).sync(occurred_at="2026-06-01T00:00:00Z")
-    service = PolicyChangeService(source, catalog, index, clock=lambda: datetime(2026, 6, 2, tzinfo=timezone.utc))
+    service = PolicyChangeService(source, catalog, index, clock=lambda: datetime(2026, 6, 2, tzinfo=UTC))
     assert service.search("legacyclaim", policy_id="billing-refunds", as_of="2026-06-02", tenant_id="northstar-retail") == []

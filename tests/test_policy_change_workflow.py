@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -52,7 +52,7 @@ def make_service(tmp_path: Path):
         source_dir,
         catalog,
         index,
-        clock=lambda: datetime(2026, 6, 2, tzinfo=timezone.utc),
+        clock=lambda: datetime(2026, 6, 2, tzinfo=UTC),
     )
     return source_dir, database, catalog, index, ingestion, service
 

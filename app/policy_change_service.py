@@ -12,7 +12,7 @@ import tempfile
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +58,7 @@ class PolicyChangeService:
             raise ValueError(
                 "policy change service requires one shared SQLite database"
             )
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(UTC))
         with closing(self._connect()) as connection:
             connection.executescript(
                 """
@@ -131,8 +131,8 @@ class PolicyChangeService:
     def _now(self) -> datetime:
         value = self._clock()
         if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            value = value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
     def _now_iso(self) -> str:
         return self._now().isoformat(timespec="seconds").replace("+00:00", "Z")

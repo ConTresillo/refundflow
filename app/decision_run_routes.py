@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC
 from typing import Annotated, Any
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -64,9 +65,9 @@ class DecisionCancelRequest(BaseModel):
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _assert_interrupted(run: DecisionRun | dict[str, Any]) -> None:
