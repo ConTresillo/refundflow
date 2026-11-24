@@ -3,6 +3,7 @@ import ipaddress
 import os
 import secrets
 import sqlite3
+import time
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -16,6 +17,7 @@ from app.identity import (
     IdentityPort,
     load_seeded_identities,
 )
+from app.observability import EventSink, push_correlation, record_event
 from app.policy_change_service import PolicyChangeService
 
 SESSION_COOKIE = "refundflow_dev_session"
@@ -40,6 +42,7 @@ def create_app(
     environment: str | None = None,
     *,
     policy_service: PolicyChangeService | None = None,
+    events_sink: EventSink | None = None,
 ) -> FastAPI:
     runtime_environment = environment or os.getenv("REFUNDFLOW_ENV", "production")
     if runtime_environment not in {"development", "production"}:
@@ -79,6 +82,7 @@ def create_app(
     app.state.identity_mode = "development-simulated" if dev_enabled else "unconfigured"
     app.state.session_store = session_store
     app.state.policy_service = policy_service
+    app.state.events_sink = events_sink or EventSink()
 
     @app.middleware("http")
     async def restrict_development_mode_to_loopback(request: Request, call_next):
@@ -99,10 +103,40 @@ def create_app(
                 local_client = False
             if not local_client:
                 return JSONResponse(
-                    {"detail": "Development identity mode is loopback-only."},
-                    status_code=403,
+                    {"detail": "Development identity mode is loopback-only."}, status_code=403
                 )
         return await call_next(request)
+
+    @app.middleware("http")
+    async def record_request_event(request: Request, call_next):
+        ctx = push_correlation(
+            correlation_id=request.headers.get("X-Correlation-ID", "server"),
+            tenant_id=None,
+        )
+        start = time.perf_counter()
+        status = 0
+        try:
+            response = await call_next(request)
+            status = response.status_code
+        except Exception as exc:
+            status = getattr(exc, "status_code", 500)
+            raise
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            sink = request.app.state.events_sink or EventSink()
+            record_event(
+                "http.request",
+                component="web.runtime",
+                details={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": status,
+                    "duration_ms": round(elapsed_ms, 3),
+                },
+                ctx=ctx,
+                sink=sink,
+            )
+        return response
 
     def ensure_development_mode() -> None:
         if not dev_enabled:
