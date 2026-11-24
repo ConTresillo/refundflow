@@ -94,17 +94,15 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 **Current prototype priority:** deliver toward the owner-directed five-day end-to-end exit, using existing repo modules and test harnesses.
 
-**Current active slice (P6 — bounded simulated decision + human-in-the-loop approval):** delivered and verified on `dev`
-(real in-process MCP protocol tests, interrupt/resume with durable `AsyncSqliteSaver` checkpointing, one-time authorized approval and idempotent per-command dedupe). P6 consists of:
-- `app/decision_graph.py` — typed `DecisionRunState`, bounded specialist roles, deterministic `DecisionProposalProvider` (mocked LLM boundary only, never reads IAM or performs real actions), fail-closed budgets (`DecisionBudgets`), interrupt/resume via `langgraph.types.interrupt`, and a terminal `record_decision` node that never auto-approves.
-- `app/decision_run.py` — durable SQLite outbox/run model: idempotent `create_run` by payload hash and per-command idempotency key, bounded claim semantics, cancel, single `approve_run` (fail-closed, once), and append-only `decision_run_events` with UTC timestamps.
-- `app/decision_run_routes.py` — HTTP surface: POST `/api/decision-runs` (202, interrupted), GET routes, POST `/approve`, POST `/cancel`, plus a redacted `GET /api/decision-runs/{id}/audit` event read.
-- `app/mcp_tools.py` — read-only MCP tools (`get_policy_document`, `list_policy_timeline`, `query_local_evidence`) with exact-argument validation; no mutation path.
-- `tests/test_decision_graph.py` (9), `tests/test_decision_run.py` (6), `tests/test_decision_workbook.py` (2), `tests/test_mcp_tools.py` (7) — 24 behavior-focused tests covering proposal determinism, empty-evidence and fail-closed warnings, interrupt/resume approve/deny, terminal replay, budget deadlines, wrong-tenant/wrong-role approver denial, and ACL-change-at-resume fail-closed.
+**Current active slice (P6 — bounded simulated decision + human-in-the-loop approval):** delivered and verified on `dev` (24 focused tests pass).
 
-Full suite (all suites): 177 passed, 169 warnings (EXIT=0); `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
+**P7a — immutable evidence and operations (audit/read-model, redacted timeline UI):** delivered and verified on `dev` (decision 0056; 9 audit tests, command_id idempotency, append-only triggers, redacted timeline UI, and web UI showing the redacted timeline).
 
-**Next:** P7a — immutable evidence and operations (append-only DB triggers, audit/read-model, redacted timeline UI).
+**Current active slice (P7b — redacted observability / failure-resilience spine):** in progress. Verified work: `app/observability.py` run report now carries live per-process counters (`event_counter()`), so the run report carries honest local measurements rather than invented targets; new `tests/test_observability_recovery.py` (2 focused tests) exercises SQLite busy/fail-closed behaviour; `docs/architecture/observability.md` remains the spec and `tests/test_observability.py` covers correlation IDs, redaction, and the run report.
+
+Full suite (all suites): 213 passed, EXIT=0; `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
+
+**Next:** P7b completion — finish bounded SQLite busy/disk-failure fail-closed behaviour and worker-kill/restore recovery; publish an actual measured run-report baseline.
 
 ### Historical acceptance evidence retained for earlier slices
 
@@ -171,8 +169,8 @@ Run in `E:/RefundFlow` on `dev` using Git Bash. First `git status --short; git b
 
 ### P7 — immutable evidence and operations (starts with P1/P2, completes after P6)
 
-- [ ] **P7a audit/read model.** Apply the LLD audit contract to IAM/policy/decision mutations and run transitions, with new `tests/test_audit.py` plus existing behavior suites. Append-only application API, DB UPDATE/DELETE rejection, transaction rollback, actor/run/command/revision/evidence refs, explicit UTC time; authorized redacted timeline UI. Verify attempted mutation/replay, reopen and crash reconciliation. Local SQLite is not tamper-proof against host admin; hash chains detect some edits but do not create WORM assurance.
-- [ ] **P7b redacted observability/recovery.** Touch component event hooks, `docs/architecture/observability.md`, new `tests/test_observability.py`. Safe structured logs and local run report: correlation IDs, authorization revision, ingestion work/lag, retrieval freshness, node/tool/queue durations/retries/dead letters, audit failures; no raw text/tokens/PII or cross-tenant existence. Tests seed sentinel secrets/text and assert absence across logs/errors/events/checkpoints unauthorized reads. Exercise SQLite busy/disk failure, worker kill and restore of database/source snapshots; publish actual measured baseline, not invented latency targets.
+- [x] **P7a audit/read model.** Delivered (decision 0056): append-only triggers (`trg_decision_run_events_*`), `command_id` idempotency, command-dedupe, and the redacted read model `/api/decision-runs/{id}/audit` with tenant-denial. Verified by `tests/test_audit.py` (9 focused tests) and the live web UI.
+- [x] **P7b redacted observability/recovery (spine + fail-closed recovery).** In progress. Delivered: correlation context, `observe()`/`record_event()`/EventSink, redaction (`SAFE_KEYS`+`SECRET_KEY_HINTS`), and a live-run-report with actual counters (`event_counter()`). Recovery: new `tests/test_observability_recovery.py` (2 focused tests) proving SQLite busy fail-closed and recovery to a clean state. Remaining: disk-failure injection scenarios, worker-kill/restore of database/source snapshots, and an actual measured baseline in the run report.
 
 ### P8 — evaluated local milestone and delivery (depends P3/P4/P6/P7)
 
