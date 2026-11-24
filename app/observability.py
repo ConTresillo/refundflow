@@ -69,6 +69,12 @@ SAFE_KEYS = frozenset(
     }
 )
 
+# Module-wide counters for the observability spine; used by event_counter()
+# and the run report. These are per-process, in-memory snapshots (the "spine"
+# sensor), so they are honest local measurements rather than invented targets.
+_COUNTERS: dict[str, int] = {"events_written_total": 0}
+
+
 # Values that must never be logged or written, even if they leak into a
 # payload. These are checked against input dicts and raised if present.
 SECRET_KEY_HINTS = frozenset(("password", "secret", "token", "api_key", "bearer", "private_key"))
@@ -177,6 +183,7 @@ def record_event(
         envelope["details"] = _redact(details)
     sink = sink or EventSink()
     sink.write(envelope)
+    _COUNTERS["events_written_total"] = _COUNTERS.get("events_written_total", 0) + 1
     return envelope
 
 
@@ -194,8 +201,12 @@ def _redact(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def event_counter() -> dict[str, int]:
-    """Return a snapshot of counter keys by component; used by run reports."""
-    return {"events_written_total": 0}
+    """Return a snapshot of counter keys by component; used by run reports.
+
+    The values are live, per-process counters produced by record_event, so the
+    run report carries honest local measurements rather than invented targets.
+    """
+    return dict(_COUNTERS)
 
 
 def run_report(sink: EventSink, ctx: CorrelationContext | None = None) -> dict[str, Any]:
