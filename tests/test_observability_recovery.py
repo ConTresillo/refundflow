@@ -14,9 +14,7 @@ snapshots; publish actual measured baseline, not invented latency targets."
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import stat
 import threading
 import time
 
@@ -66,13 +64,6 @@ class TestSqliteBusyFailClosed:
             holder.join(timeout=20)
 
         # No partial run row survived.
-        row = repo.status(repo._find_by_idempotency(repo._payload_idempotency_key(
-            tenant_id="northstar-retail",
-            actor_subject_id="alice.chen",
-            question="q",
-            evidence=[],
-            as_of="2026-11-22",
-        ))["run_id"]) if False else None
         assert repo.list_runs("northstar-retail") == []
 
     def test_recovery_after_busy_is_clean(self, tmp_path):
