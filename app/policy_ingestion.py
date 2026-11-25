@@ -337,7 +337,14 @@ class PolicyIngestionService:
                     )
                     self._catalog.record_source_watermark(policy_id, record["content_hash"], occurred_at, connection)
                     changed += 1
-                outcomes[policy_id] = "changed"
+                    outcomes[policy_id] = "changed"
+                else:
+                    self._catalog.publish(
+                        record, occurred_at=occurred_at, connection=connection
+                    )
+                    self._catalog.record_source_watermark(policy_id, record["content_hash"], occurred_at, connection)
+                    added += 1
+                    outcomes[policy_id] = "added"
                 complete_versions.update(
                     (policy_id, version["version"])
                     for version in self._catalog.versions(
