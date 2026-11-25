@@ -223,7 +223,13 @@ class TestDiskFailureInjection:
             # Linux/other it cannot open the file for writing.
             assert ("readonly" in error_msg) or ("unable to open database" in error_msg)
         finally:
-            os.chmod(db, stat.S_IWRITE)
+            # Restore the file to a fully readable/writable mode so a fresh
+            # repository can open it afterwards on every platform. Plain
+            # S_IWRITE only clears the read-only flag on Windows but leaves
+            # the file write-only (no read bits) on Unix, which makes a
+            # subsequent sqlite3.connect() fail to open the database with
+            # "unable to open database file".
+            os.chmod(db, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         # The failed append did not corrupt the original run (no partial row).
         fresh = DecisionRunRepository(db)
         runs = fresh.list_runs("northstar-retail")
