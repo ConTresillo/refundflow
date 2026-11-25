@@ -143,6 +143,32 @@ def register_evidence_run_routes(
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/api/evidence-runs/{run_id}/events")
+    def evidence_run_events(
+        request: Request,
+        run_id: str,
+        cursor: Annotated[str | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    ) -> JSONResponse:
+        identity = current_identity(request)
+        require_same_origin(request)
+        run = queue.get_run(run_id)
+        if run.tenant_id != identity.tenant_id:
+            raise HTTPException(status_code=403, detail="run not in your tenant")
+        if limit < 1 or limit > 200:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 200")
+        events, next_cursor = queue._repository.list_run_events(
+            run_id, limit=limit, cursor=cursor
+        )
+        return JSONResponse(
+            {
+                "run_id": run_id,
+                "events": events,
+                "next_cursor": next_cursor,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.post("/api/evidence-runs/{run_id}/cancel", status_code=202)
     async def evidence_run_cancel(
         request: Request,
