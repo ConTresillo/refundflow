@@ -217,7 +217,11 @@ class TestDiskFailureInjection:
         try:
             with pytest.raises(sqlite3.OperationalError) as excinfo:
                 repo.append_event(run_id, "test.event")
-            assert "readonly" in str(excinfo.value).lower()
+            error_msg = str(excinfo.value).lower()
+            # Cross-platform SQLite reports a read-only DB differently: on
+            # Windows it says "attempt to write a readonly database"; on
+            # Linux/other it cannot open the file for writing.
+            assert ("readonly" in error_msg) or ("unable to open database" in error_msg)
         finally:
             os.chmod(db, stat.S_IWRITE)
         # The failed append did not corrupt the original run (no partial row).
