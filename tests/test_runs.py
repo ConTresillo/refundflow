@@ -211,6 +211,42 @@ async def test_crash_restart_converges_to_one_logical_outcome(client_and_service
     assert {event.event_type for event in final.events} == {"run.created", "run.failed"}
 
 
+@pytest.mark.asyncio
+async def test_fail_closed_revocation_stops_retrieval_at_resume(client_and_service):
+    client, service, _, app = client_and_service
+    queue = app.state.evidence_queue
+    # Seed an active grant, then crash the run mid-flight. Revoke the grant
+    # while the run is 'running' (in flight), then resume the worker: the run
+    # must fail closed against the revoked grant on resume and never emit
+    # retrieval text.
+    _seed_evidence_grants(service, grantee_subject_id="alice.chen")
+    _login(client, "alice.chen")
+    response, _ = _enqueue(client, service, _billing_payload())
+    assert response.status_code == 202, response.text
+    run_id = response.json()["run_id"]
+
+    with closing(queue._repository._connect()) as connection:
+        connection.execute(
+            "UPDATE evidence_runs SET status = 'running' WHERE run_id = ?", (run_id,)
+        )
+        connection.commit()
+    # Revoke while the run is in flight.
+    iam = SQLiteIAMStore(service._database)
+    for document in iam.authorization_document_snapshot()[1]:
+        if document.id == "billing-refunds":
+            iam.put_document(
+                document.model_copy(update={"grants": ()}), occurred_at="revoke"
+            )
+    recovered = queue._repository.requeue_stale(stale_after_seconds=0)
+    assert recovered == 1
+
+    outcome = await queue.process_one()
+    assert outcome["status"] == "denied", outcome
+    run = queue.get_run(run_id)
+    assert run.status == "failed", run
+    assert run.error == "authorization denied", run
+
+
 def test_cancel_is_fail_closed_and_double_cancel_is_409(client_and_service):
     client, service, _, app = client_and_service
     queue = app.state.evidence_queue
