@@ -98,11 +98,11 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 
 **P7a — immutable evidence and operations (audit/read-model, redacted timeline UI):** delivered and verified on `dev` (decision 0056; 9 audit tests, command_id idempotency, append-only triggers, redacted timeline UI, and web UI showing the redacted timeline).
 
-**Current active slice (P7b — redacted observability / failure-resilience spine):** in progress. Verified work: `app/observability.py` run report now carries live per-process counters (`event_counter()`), so the run report carries honest local measurements rather than invented targets; new `tests/test_observability_recovery.py` (2 focused tests) exercises SQLite busy/fail-closed behaviour; `docs/architecture/observability.md` remains the spec and `tests/test_observability.py` covers correlation IDs, redaction, and the run report.
+**Current active slice (P7b — redacted observability / failure-resilience spine):** delivered and verified on `main` via PR #8 (squash merged). Verified work: `app/observability.py` run report now carries live per-process counters (`event_counter()`), so the run report carries honest local measurements rather than invented targets; `tests/test_observability_recovery.py` is an 8-focussed regression suite (4 classes: TestSqliteBusyFailClosed, TestWorkerKillRestore, TestDiskFailureInjection, TestRunReportMeasuredBaseline) proving SQLite busy/fail-closed, worker-kill/restore, disk-failure injection, and a measured run-report baseline. `docs/architecture/observability.md` remains the spec and `tests/test_observability.py` covers correlation IDs, redaction, and the run report.
 
-Full suite (all suites): 213 passed, EXIT=0; `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
+Full suite (all suites): 219 passed, EXIT=0; `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
 
-**Next:** P7b completion — finish bounded SQLite busy/disk-failure fail-closed behaviour and worker-kill/restore recovery; publish an actual measured run-report baseline.
+**Next:** None — P7b recovery slice is complete. Remaining open work is the broader roadmap (e.g., async evidence queue, semantic cache, evaluation matrix).
 
 ### Historical acceptance evidence retained for earlier slices
 
