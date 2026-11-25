@@ -523,6 +523,36 @@ class EvidenceRunRepository:
         next_cursor = rows[-1]["run_id"] if len(rows) == limit else None
         return [dict(row) for row in rows], next_cursor
 
+    def list_run_events(
+        self, run_id: str, *, limit: int = 20, cursor: str | None = None
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Cursor-paginated append-only events for one run (newest first).
+
+        ``cursor`` is the ``sequence`` of the last returned event; page from the
+        newest rows downward so a consumer can read a run's history without
+        buffering it whole.
+        """
+        if limit < 1 or limit > 200:
+            raise ValueError("limit must be between 1 and 200")
+        with closing(self._connect()) as connection:
+            if cursor is None:
+                rows = connection.execute(
+                    "SELECT * FROM evidence_run_events "
+                    "WHERE run_id = ? ORDER BY sequence DESC LIMIT ?",
+                    (run_id, limit),
+                ).fetchall()
+            else:
+                offset = int(cursor)
+                rows = connection.execute(
+                    "SELECT * FROM evidence_run_events "
+                    "WHERE run_id = ? AND sequence < ? "
+                    "ORDER BY sequence DESC LIMIT ?",
+                    (run_id, offset, limit),
+                ).fetchall()
+        next_cursor = str(rows[-1]["sequence"]) if len(rows) == limit else None
+        return [dict(row) for row in rows], next_cursor
+
+
     # --------------------------------------------------------------- read
     def status(self, run_id: str) -> EvidenceRun:
         with closing(self._connect()) as connection:
@@ -577,9 +607,10 @@ class EvidenceRunRepository:
         if not result_json:
             return []
         try:
-            records = json.loads(result_json)
+            payload = json.loads(result_json)
         except ValueError:
             return []
+        records = payload.get("evidence", []) if isinstance(payload, dict) else []
         return [PolicyEvidence(**item) for item in records]
 
     def _append_events(
