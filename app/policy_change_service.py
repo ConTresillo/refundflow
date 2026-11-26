@@ -843,6 +843,14 @@ class PolicyChangeService:
                 "source_name": item.source_name,
                 "effective_from": item.effective_from,
                 "effective_to": item.effective_to,
+                "freshness_state": self._retriever._freshness_state(
+                    self._retriever._last_source_age_seconds,
+                    self._retriever._last_cache_status,
+                ),
+                "cache_status": self._retriever._last_cache_status,
+                "source_age_seconds": self._retriever._last_source_age_seconds,
+                "authorization_revision": authorization_revision,
+                "document_revision": document_revision,
             }
             for item in evidence
         ]

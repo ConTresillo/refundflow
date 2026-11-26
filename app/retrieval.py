@@ -276,36 +276,9 @@ class SQLiteEvidenceRetriever:
             items = self._build_evidence(
                 candidates, allowed_policy_ids or set(), as_of, envelope_fingerprint, cache_status, top_k
             )
-        elif answer_cache == "exact" and self._answer_cache is not None:
-            cache_key = CacheKey(
-                query=query,
-                departments=departments,
-                as_of=as_of,
-                allowed_policy_ids=allowed_policy_ids,
-                evidence_mode=evidence_mode,
-                answer_cache=answer_cache,
-                auth_subject=subject_id or "",
-                auth_tenant=tenant_id or "",
-                snapshot_hash=self._catalog_snapshot_fingerprint(),
-            )
-            cached = self._answer_cache.get(cache_key)
-            if cached is not None:
-                items = [PolicyEvidence(**item) for item in cached[0]]
-                cache_status = "exact_hit"
-            else:
-                cache_status = "miss"
-                items = self._build_evidence(
-                    candidates, allowed_policy_ids or set(), as_of, envelope_fingerprint, cache_status, top_k
-                )
-                self._answer_cache.put(
-                    cache_key,
-                    [item.to_dict() for item in items],
-                    snapshot_hash=cache_key.snapshot_hash,
-                    auth_hash=f"{subject_id or ''}\0{tenant_id or ''}",
-                    ttl_seconds=self._cache_ttl_seconds,
-                    size_bytes=sum(len(json.dumps(item.to_dict(), sort_keys=True).encode("utf-8")) for item in items),
-                )
-        elif evidence_mode == "ttl_snapshot" and answer_cache != "off":
+        elif evidence_mode == "ttl_snapshot":
+            # Fast local TTL snapshot cache; invalidated on any catalog snapshot
+            # fingerprint change. Never serves stale evidence.
             entry = self._cache.get(envelope_fingerprint)
             if (
                 entry is not None
@@ -345,6 +318,35 @@ class SQLiteEvidenceRetriever:
                     expires_at=time.monotonic() + self._cache_ttl_seconds,
                 )
                 self._trim_cache()
+        elif answer_cache == "exact" and self._answer_cache is not None:
+            cache_key = CacheKey(
+                query=query,
+                departments=departments,
+                as_of=as_of,
+                allowed_policy_ids=allowed_policy_ids,
+                evidence_mode=evidence_mode,
+                answer_cache=answer_cache,
+                auth_subject=subject_id or "",
+                auth_tenant=tenant_id or "",
+                snapshot_hash=self._catalog_snapshot_fingerprint(),
+            )
+            cached = self._answer_cache.get(cache_key)
+            if cached is not None:
+                items = [PolicyEvidence(**item) for item in cached[0]]
+                cache_status = "exact_hit"
+            else:
+                cache_status = "miss"
+                items = self._build_evidence(
+                    candidates, allowed_policy_ids or set(), as_of, envelope_fingerprint, cache_status, top_k
+                )
+                self._answer_cache.put(
+                    cache_key,
+                    [item.to_dict() for item in items],
+                    snapshot_hash=cache_key.snapshot_hash,
+                    auth_hash=f"{subject_id or ''}\0{tenant_id or ''}",
+                    ttl_seconds=self._cache_ttl_seconds,
+                    size_bytes=sum(len(json.dumps(item.to_dict(), sort_keys=True).encode("utf-8")) for item in items),
+                )
         else:
             cache_status = "off"
             items = self._build_evidence(
