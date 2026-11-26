@@ -335,8 +335,14 @@ def test_development_exposes_evidence_without_enabling_policy_lab(tmp_path, monk
     assert "Policy Change Lab" in client.get("/policies").text
 
     iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
-    document = next(item for item in iam.authorization_document_snapshot()[1] if item.id == "billing-refunds")
-    iam.put_document(document.model_copy(update={"grants": ()}), occurred_at="test-revoke")
+    # Revoke every billing-document grant bob holds; the department search must
+    # then fail closed with no authorized evidence.
+    for document in [
+        item
+        for item in iam.authorization_document_snapshot()[1]
+        if item.tenant_id == "northstar-retail" and item.scope == "department:billing"
+    ]:
+        iam.put_document(document.model_copy(update={"grants": ()}), occurred_at="test-revoke")
     assert client.get("/api/policy-search", params=params).json() == []
 
 
@@ -535,9 +541,14 @@ def test_local_development_seed_grants_only_bobs_billing_evidence_and_revokes(tm
     assert denied.status_code == 200 and denied.json() == []
 
     iam = SQLiteIAMStore(tmp_path / "refundflow.sqlite3")
-    documents = [item for item in iam.authorization_document_snapshot()[1] if item.id == "billing-refunds"]
-    assert len(documents) == 1 and documents[0].tenant_id == "northstar-retail"
-    iam.put_document(documents[0].model_copy(update={"grants": ()}), occurred_at="test-revocation")
+    documents = [
+        item
+        for item in iam.authorization_document_snapshot()[1]
+        if item.tenant_id == "northstar-retail" and item.scope == "department:billing"
+    ]
+    assert documents, "bob must hold at least one billing-document grant to revoke"
+    for document in documents:
+        iam.put_document(document.model_copy(update={"grants": ()}), occurred_at="test-revocation")
     bob = TestClient(create_runtime_app(environment="development"), client=("127.0.0.1", 8000))
     home = bob.get("/")
     csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', home.text).group(1)

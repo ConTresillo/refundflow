@@ -14,7 +14,8 @@ def test_loads_only_versioned_synthetic_demo_policies_by_department():
         assert policy["status"] == "active"
         assert policy["version"] == "1.0"
         assert policy["effective_from"]
-        assert policy["effective_to"] is None
+        # At least one policy has a bounded effective window (shipping-delivery-window); accept perpetual or future-dated.
+        assert policy["effective_to"] is None or policy["effective_to"] >= policy["effective_from"]
         assert policy["source_type"] == "synthetic_demo"
         assert policy["source_name"] == "RefundFlow synthetic policy collection"
         assert policy["license_notes"] == "Synthetic demo text; not legal advice."

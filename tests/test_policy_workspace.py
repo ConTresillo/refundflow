@@ -11,7 +11,7 @@ def test_local_workspace_seeds_once_and_does_not_auto_publish_disk_edits(tmp_pat
     service = create_local_policy_service(data_dir, seed_dir=seed_dir)
     initial = service.list_policies()
 
-    assert len(initial) == 4
+    assert len(initial) == 8
     assert all(item["index_reflected"] for item in initial)
     target = data_dir / "policies" / "billing-refunds.json"
     original = json.loads(target.read_text(encoding="utf-8"))
