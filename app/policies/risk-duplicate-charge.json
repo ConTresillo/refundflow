@@ -1,0 +1,20 @@
+{
+  "id": "risk-duplicate-charge",
+  "department_id": "risk",
+  "version": "1.0",
+  "title": "Risk Duplicate Charge and Escalation Review",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Risk review checks for duplicate charges before any refund recommendation reaches the approval queue.",
+    "Compare transaction references and timestamps when a second charge appears shortly after the first. Escalate conflicting records for billing review.",
+    "A possible duplicate charge is a request for investigation, not proof of fraud and never grounds for an automatic denial.",
+    "Record only the minimum case evidence needed for review and remove unnecessary personal information from notes."
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "support-receipts",
+  "department_id": "support",
+  "version": "1.0",
+  "title": "Support Receipt and Proof-of-Purchase Handling",
+  "status": "active",
+  "effective_from": "2026-01-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Support intake records the order reference, the payment method used, and the customer's reported incident before recommending a remedy.",
+    "Ask for a receipt or delivery photo when needed to assess a claim. Do not request payment credentials or unnecessary personal information.",
+    "Support may recommend a replacement, return, or refund for review. Communicate the proposed next step clearly and do not promise a consequential action before approval.",
+    "If the account holder disputes the order identity or the available evidence conflicts, pause the recommendation and route the case to the responsible review team."
+  ]
+}

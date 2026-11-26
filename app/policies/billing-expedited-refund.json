@@ -1,0 +1,20 @@
+{
+  "id": "billing-expedited-refund",
+  "department_id": "billing",
+  "version": "1.0",
+  "title": "Billing Expedited Refund and Settlement Limits",
+  "status": "active",
+  "effective_from": "2026-02-01",
+  "effective_to": null,
+  "source_type": "synthetic_demo",
+  "source_name": "RefundFlow synthetic policy collection",
+  "source_url": "",
+  "provenance": "Authored for the RefundFlow offline simulation; this text is not copied from external services.",
+  "license_notes": "Synthetic demo text; not legal advice.",
+  "excerpts": [
+    "Expedited refund review applies to orders above a high-value threshold and requires a documented approval record.",
+    "Never accelerate settlement without the originating payment reference and an approved exception review.",
+    "Record the expedited approval decision, approver, and authorized settlement window for audit.",
+    "An expedited refund recommendation changes only the settlement timeline, not the underlying eligibility rules."
+  ]
+}
