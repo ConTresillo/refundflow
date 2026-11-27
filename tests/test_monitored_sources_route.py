@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 from app.web import create_app
 
 SOURCE_ID = "refundflow-opportunity"
-FRESH_OBSERVED = "4a95c0ea17daa08b"
+# The tracked source flipped again; the freshest observed revision is pinned.
+FRESH_OBSERVED = "34522637af8c8f37"
 
 
 @pytest.fixture()

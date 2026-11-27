@@ -15,7 +15,9 @@ from app.monitored_sources import SQLiteMonitoredSources
 
 SOURCE_ID = "refundflow-opportunity"
 FIRST_OBSERVED = "1909139beb6ca77b"
-FRESH_OBSERVED = "4a95c0ea17daa08b"
+# The tracked source flipped again; the freshest observed revision is pinned
+# here and must be read back through the authenticated readout endpoint.
+FRESH_OBSERVED = "34522637af8c8f37"
 
 
 def _write(db: Path, observed_hash: str, observed_at: str | None = None) -> None:
