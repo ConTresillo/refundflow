@@ -15,7 +15,7 @@ from app.monitored_sources import SQLiteMonitoredSources
 
 SOURCE_ID = "refundflow-opportunity"
 FIRST_OBSERVED = "1909139beb6ca77b"
-FRESH_OBSERVED = "6938664fb626845e"
+FRESH_OBSERVED = "fc9fc674b8a7439e"
 
 
 def _write(db: Path, observed_hash: str, observed_at: str | None = None) -> None:

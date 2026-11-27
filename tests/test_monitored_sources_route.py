@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.web import create_app
 
 SOURCE_ID = "refundflow-opportunity"
-FRESH_OBSERVED = "6938664fb626845e"
+FRESH_OBSERVED = "fc9fc674b8a7439e"
 
 
 @pytest.fixture()
