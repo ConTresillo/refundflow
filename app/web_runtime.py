@@ -16,6 +16,9 @@ from app.identity import (
     IdentityPort,
     load_seeded_identities,
 )
+from app.monitored_sources import SQLiteMonitoredSources
+
+MONITORED_SOURCES_DB = Path(__file__).resolve().parents[1] / "var" / "monitored_sources.sqlite3"
 from app.policy_change_service import PolicyChangeService
 
 SESSION_COOKIE = "refundflow_dev_session"
@@ -419,7 +422,20 @@ def create_app(
             require_csrf=require_csrf,
         )
 
+    monitored_sources = SQLiteMonitoredSources(MONITORED_SOURCES_DB)
+    app.state.monitored_sources = monitored_sources
+
+    @app.get("/api/monitored-sources/{source_id}")
+    async def get_monitored_source(request: Request, source_id: str) -> JSONResponse:
+        current_identity(request)
+        require_same_origin(request)
+        row = monitored_sources.status(source_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="monitored source not found")
+        return JSONResponse(dict(row))
+
     return app
+
 
 
 app = create_app()
