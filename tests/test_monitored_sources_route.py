@@ -61,6 +61,15 @@ def test_monitored_source_readout_returns_fresh_observed_revision(development_en
     csrf = _csrf_from(client.get("/").text)
     _login(client, "alice.chen", csrf)
 
+    # Persist the fresh observed revision of the external tracked source into the
+    # durable tracker, then read it back through the authenticated readout.
+    monitored = client.app.state.monitored_sources
+    monitored.record(
+        SOURCE_ID,
+        FRESH_OBSERVED,
+        observed_at="2026-11-27T00:00:00+00:00",
+    )
+
     response = client.get(
         f"/api/monitored-sources/{SOURCE_ID}",
         headers={"origin": "http://testserver"},
