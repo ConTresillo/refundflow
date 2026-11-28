@@ -103,7 +103,7 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 - `tests/test_decision_workbook.py` (2), `tests/test_mcp_tools.py` (7) — 24 behavior-focused tests covering proposal determinism, empty-evidence and fail-closed warnings, interrupt/resume approve/deny, terminal replay, budget deadlines, wrong-tenant/wrong-role approver denial, and ACL-change-at-resume fail-closed.
 
 **Current active slice (revision freshness — tracked source readout):** delivered and verified on `dev`
-(test-first revision freshness readout for the externally monitored source `refundflow-opportunity`, in response to a monitored-source revision read-out change). Pinned the focused readout readback regression tests to the freshest observed revision `527017c0e4e8faaa`.
+(test-first revision freshness readout for the externally monitored source `refundflow-opportunity`, in response to a monitored-source revision read-out change). Pinned the focused readout readback regression tests to the freshest observed revision `92ae4ae4c0511114`.
 
 Full suite (all suites): **219 passed, 0 failed, 222 warnings (EXIT=0)**; `ruff check tests/test_monitored_sources.py tests/test_monitored_sources_route.py` clear on touched paths (`6` pre-existing errors in untracked `tests/test_corpus_mutations.py` left untouched per preservation rule); `compileall` and `pip check` clear; `git diff --check` clean.
 
