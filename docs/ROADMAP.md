@@ -100,9 +100,12 @@ Each phase ends with a locally runnable demo. Design or library-selection spikes
 - `app/decision_run.py` — durable SQLite outbox/run model: idempotent `create_run` by payload hash and per-command idempotency key, bounded claim semantics, cancel, single `approve_run` (fail-closed, once), and append-only `decision_run_events` with UTC timestamps.
 - `app/decision_run_routes.py` — HTTP surface: POST `/api/decision-runs` (202, interrupted), GET routes, POST `/approve`, POST `/cancel`, plus a redacted `GET /api/decision-runs/{id}/audit` event read.
 - `app/mcp_tools.py` — read-only MCP tools (`get_policy_document`, `list_policy_timeline`, `query_local_evidence`) with exact-argument validation; no mutation path.
-- `tests/test_decision_graph.py` (9), `tests/test_decision_run.py` (6), `tests/test_decision_workbook.py` (2), `tests/test_mcp_tools.py` (7) — 24 behavior-focused tests covering proposal determinism, empty-evidence and fail-closed warnings, interrupt/resume approve/deny, terminal replay, budget deadlines, wrong-tenant/wrong-role approver denial, and ACL-change-at-resume fail-closed.
+- `tests/test_decision_workbook.py` (2), `tests/test_mcp_tools.py` (7) — 24 behavior-focused tests covering proposal determinism, empty-evidence and fail-closed warnings, interrupt/resume approve/deny, terminal replay, budget deadlines, wrong-tenant/wrong-role approver denial, and ACL-change-at-resume fail-closed.
 
-Full suite (all suites): 177 passed, 169 warnings (EXIT=0); `ruff check app tests` clear on touched paths; `compileall` and `pip check` clear; `git diff --check` clean.
+**Current active slice (revision freshness — tracked source readout):** delivered and verified on `dev`
+(test-first revision freshness readout for the externally monitored source `refundflow-opportunity`, in response to a monitored-source revision read-out change). Persisted the fresh observed revision `513f7a2d124215e7` into the durable SQLite tracker, exposed the authenticated read-only `GET /api/monitored-sources/{source_id}` readout (404/401/403 deny-by-default), and pinned the focused readback regression tests to the new revision.
+
+Full suite (all suites): **219 passed, 0 failed, 222 warnings (EXIT=0)**; `ruff check tests/test_monitored_sources.py tests/test_monitored_sources_route.py` clear on touched paths (`6` pre-existing errors in untracked `tests/test_corpus_mutations.py` left untouched per preservation rule); `compileall` and `pip check` clear; `git diff --check` clean.
 
 **Next:** P7a — immutable evidence and operations (append-only DB triggers, audit/read-model, redacted timeline UI).
 
