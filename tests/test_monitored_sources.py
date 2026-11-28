@@ -17,7 +17,7 @@ SOURCE_ID = "refundflow-opportunity"
 FIRST_OBSERVED = "1909139beb6ca77b"
 # The tracked source flipped again; the freshest observed revision is pinned
 # here and must be read back through the authenticated readout endpoint.
-FRESH_OBSERVED = "c6f6ba8f5c853d45"
+FRESH_OBSERVED = "527017c0e4e8faaa"
 
 
 def _write(db: Path, observed_hash: str, observed_at: str | None = None) -> None:

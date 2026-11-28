@@ -17,7 +17,7 @@ from app.web import create_app
 
 SOURCE_ID = "refundflow-opportunity"
 # The tracked source flipped again; the freshest observed revision is pinned.
-FRESH_OBSERVED = "c6f6ba8f5c853d45"
+FRESH_OBSERVED = "527017c0e4e8faaa"
 
 
 @pytest.fixture()
